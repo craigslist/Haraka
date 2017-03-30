@@ -23,12 +23,24 @@ var net = require('net');
 var logger = require('./logger');
 var utils  = require('haraka-utils');
 
-// takes a comma/space-separated list of ip:ports
-//  1.1.1.1:22,  3.3.3.3:44
+// HostPool
+//
+// Constructor takes a comma-separated list of ip:ports.
+// You can add [hostname] to keep them straight, that part gets ignored,
+// as does any whitespace, e.g.:
+//
+//     conf.hosts= = \
+//             1.2.33.44:11[host1],         \
+//             1.2. 9.55:22[host2],         \
+//             1.2.33.66:33[the test host], \
+//
 function HostPool (hostports_str, retry_secs){
     var self = this;
 
     var hosts = (hostports_str || '')
+            .replace(/,+$/, '')        // remove trailing commas
+            .replace(/\[.+?\]/g, '')   // remove the [hostname] comments
+            .replace(/ /g, '')         // remove any spaces, e.g. "11. 2. 3.444"
             .trim()
             .split(/[\s,]+/)
             .map(function (hostport){

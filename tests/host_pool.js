@@ -45,6 +45,20 @@ exports.HostPool = {
 
         test.done();
     },
+    "extended formatting": function (test){
+        test.expect(5);
+
+        var pool = new HostPool("1. 1. 1.1:111[ host1] , 2 .2. 2.2 :222[host 2],,");
+        var hosts = new Array(pool.get_host(), pool.get_host());
+        hosts = hosts.sort(function(a,b){ return a.host.localeCompare(b.host) }); //un-randomize them
+        test.equal(hosts[0].host, '1.1.1.1');
+        test.equal(hosts[0].port, '111');
+        test.equal(hosts[1].host, '2.2.2.2');
+        test.equal(hosts[1].port, '222');
+        test.equal(hosts.length, 2);
+
+        test.done();
+    },
 
     "dead host": function(test){
         test.expect(3);
