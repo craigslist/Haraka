@@ -3,7 +3,6 @@
 var fixtures     = require('haraka-test-fixtures');
 
 var Connection   = fixtures.connection;
-var ResultStore  = fixtures.result_store;
 
 var _set_up = function (done) {
 
@@ -14,7 +13,7 @@ var _set_up = function (done) {
 
     this.connection.transaction = {
         notes: {},
-        results: new ResultStore(this.plugin),
+        results: new fixtures.results(this.plugin),
     };
 
     done();
@@ -78,7 +77,7 @@ exports.hook_data = {
     'only_with_attachments, true': function (test) {
         this.plugin.cfg.main.only_with_attachments=true;
         test.expect(2);
-        this.connection.transaction.attachment_hooks = function() {};
+        this.connection.transaction.attachment_hooks = function () {};
         var next = function () {
             test.equal(true, this.plugin.cfg.main.only_with_attachments);
             test.equal(true, this.connection.transaction.parse_body);

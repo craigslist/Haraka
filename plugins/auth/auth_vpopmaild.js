@@ -16,7 +16,7 @@ exports.load_vpop_ini = function () {
 };
 
 exports.hook_capabilities = function (next, connection) {
-    if (!connection.using_tls) { return next(); }
+    if (!connection.tls.enabled) { return next(); }
     var plugin = this;
 
     var methods = [ 'PLAIN', 'LOGIN' ];
@@ -106,7 +106,7 @@ exports.get_vpopmaild_socket = function (user) {
     return socket;
 };
 
-exports.get_plain_passwd = function (user, cb) {
+exports.get_plain_passwd = function (user, connection, cb) {
     var plugin = this;
 
     var socket = plugin.get_vpopmaild_socket(user);
@@ -142,7 +142,7 @@ exports.get_plain_passwd = function (user, cb) {
         }
         if (chunk_count > 2) {
             if (/^\-ERR/.test(chunk)) {
-                plugin.logerror("get_plain failed: " + chunk);
+                plugin.lognotice("get_plain failed: " + chunk);
                 socket.end();         // disconnect
                 return;
             }
@@ -155,6 +155,6 @@ exports.get_plain_passwd = function (user, cb) {
         }
     });
     socket.on('end', function () {
-        cb(plain_pass.toString());
+        cb(plain_pass ? plain_pass.toString() : plain_pass);
     });
 };

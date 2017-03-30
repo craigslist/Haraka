@@ -1,7 +1,9 @@
+'use strict';
+
 var util = require('util');
 var EventEmitter = require('events').EventEmitter;
 
-function ChunkEmitter(buffer_size) {
+function ChunkEmitter (buffer_size) {
     EventEmitter.call(this);
     this.buffer_size = parseInt(buffer_size) || (64 * 1024);
     this.buf = null;
@@ -14,7 +16,7 @@ util.inherits(ChunkEmitter, EventEmitter);
 
 if (!Buffer.concat) {
     var buf;
-    Buffer.concat = function(list, length) {
+    Buffer.concat = function (list, length) {
         if (!Array.isArray(list)) {
             throw new Error('Usage: Buffer.concat(list, [length])');
         }
@@ -28,7 +30,7 @@ if (!Buffer.concat) {
 
         if (typeof length !== 'number') {
             length = 0;
-            for (var i = 0; i < list.length; i++) {
+            for (let i = 0; i < list.length; i++) {
                 buf = list[i];
                 length += buf.length;
             }
@@ -37,7 +39,7 @@ if (!Buffer.concat) {
         var buffer = new Buffer(length);
         var pos = 0;
 
-        for (var i = 0; i < list.length; i++) {
+        for (let i = 0; i < list.length; i++) {
             buf = list[i];
             buf.copy(buffer, pos);
             pos += buf.length;

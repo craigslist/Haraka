@@ -2,7 +2,7 @@
 // Call spamassassin via spamd
 
 var sock  = require('./line_socket');
-var utils = require('./utils');
+var utils = require('haraka-utils');
 
 exports.register = function () {
     var plugin = this;
@@ -11,7 +11,11 @@ exports.register = function () {
 
 exports.load_spamassassin_ini = function () {
     var plugin = this;
-    plugin.cfg = plugin.config.get('spamassassin.ini', function () {
+    plugin.cfg = plugin.config.get('spamassassin.ini', {
+        booleans: [
+            '+add_headers',
+        ],
+    }, function () {
         plugin.load_spamassassin_ini();
     });
 
@@ -27,8 +31,10 @@ exports.load_spamassassin_ini = function () {
         plugin.cfg.main[key] = defaults[key];
     }
 
-    ['reject_threshold', 'relay_reject_threshold',
-    'munge_subject_threshold', 'max_size'].forEach(function (item) {
+    [
+        'reject_threshold', 'relay_reject_threshold',
+        'munge_subject_threshold', 'max_size'
+    ].forEach(function (item) {
         if (!plugin.cfg.main[item]) return;
         plugin.cfg.main[item] = Number(plugin.cfg.main[item]);
     });
@@ -86,7 +92,7 @@ exports.hook_data_post = function (next, connection) {
         }
     });
 
-    socket.on('end', function () {
+    socket.once('end', function () {
         // Abort if the transaction is gone
         if (!connection.transaction) return next();
 
@@ -181,6 +187,8 @@ exports.do_header_updates = function (connection, spamd_response) {
     }
 
     var modern = plugin.cfg.main.modern_status_syntax;
+    if ( !plugin.cfg.main.add_headers ) return;
+
     for (var key in spamd_response.headers) {
         if (!key || key === '' || key === undefined) continue;
         var val = spamd_response.headers[key];

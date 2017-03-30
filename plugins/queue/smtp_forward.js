@@ -23,6 +23,8 @@ exports.load_smtp_forward_ini = function () {
         booleans: [
             '-main.enable_tls',
             '+main.enable_outbound',
+            'main.one_message_per_rcpt',
+            '*.enable_tls',
         ],
     },
     function () {
@@ -43,10 +45,12 @@ exports.get_config = function (connection) {
     var rcpt_count = connection.transaction.rcpt_to.length;
     if (rcpt_count === 1) { return plugin.cfg[dom]; }
 
-    var dst_host = plugin.cfg[dom].host;
     for (var i=1; i < rcpt_count; i++) {
-        if (connection.transaction.rcpt_to[i].host !== dst_host) {
-            return plugin.cfg.main;
+        var dom2 = connection.transaction.rcpt_to[i].host;
+        if (!dom2 || !plugin.cfg[dom2]) return plugin.cfg.main;
+        if (plugin.cfg[dom2].host !== plugin.cfg[dom].host) {
+            // differing destination hosts
+            return plugin.cfg.main; // return default config
         }
     }
     return plugin.cfg[dom];
@@ -57,16 +61,18 @@ exports.hook_queue = function (next, connection) {
     var cfg = plugin.get_config(connection);
     var txn = connection.transaction;
 
-    connection.loginfo(plugin, 'forwarding to ' + cfg.host + ':' + cfg.port);
+    connection.loginfo(plugin, 'forwarding to ' +
+            (cfg.forwarding_host_pool ? "configured forwarding_host_pool" : cfg.host + ':' + cfg.port)
+        );
 
     var smc_cb = function (err, smtp_client) {
         smtp_client.next = next;
 
         if (cfg.auth_user) {
             connection.loginfo(plugin, 'Configuring authentication for SMTP server ' + cfg.host + ':' + cfg.port);
-            smtp_client.on('greeting', function() {
+            smtp_client.on('capabilities', function () {
 
-                var base64 = function(str) {
+                var base64 = function (str) {
                     var buffer = new Buffer(str, 'UTF-8');
                     return buffer.toString('base64');
                 };
@@ -77,13 +83,13 @@ exports.hook_queue = function (next, connection) {
                 }
                 else if (cfg.auth_type === 'login') {
                     smtp_client.send_command('AUTH', 'LOGIN');
-                    smtp_client.on('auth', function() {
+                    smtp_client.on('auth', function () {
                         connection.loginfo(plugin, 'Authenticating with AUTH LOGIN ' + cfg.auth_user);
                     });
-                    smtp_client.on('auth_username', function() {
+                    smtp_client.on('auth_username', function () {
                         smtp_client.send_command(base64(cfg.auth_user) + '\r\n');
                     });
-                    smtp_client.on('auth_password', function() {
+                    smtp_client.on('auth_password', function () {
                         smtp_client.send_command(base64(cfg.auth_pass) + '\r\n');
                     });
                 }

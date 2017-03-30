@@ -1,7 +1,7 @@
 // DNS list module
 var dns         = require('dns');
 var net         = require('net');
-var net_utils   = require('./net_utils');
+var net_utils   = require('haraka-net-utils');
 var async       = require('async');
 
 exports.enable_stats = false;
@@ -13,7 +13,7 @@ exports.lookup = function (lookup, zone, cb) {
     var self = this;
 
     if (!lookup || !zone) {
-        return process.nextTick(function () {
+        return setImmediate(function () {
             return cb(new Error('missing data'));
         });
     }
@@ -50,10 +50,10 @@ exports.lookup = function (lookup, zone, cb) {
         }
 
         if (err) {
-            if (err.code === 'ETIMEOUT') {         // list timed out
+            if (err.code === dns.TIMEOUT) {         // list timed out
                 self.disable_zone(zone, err.code); // disable it
             }
-            if (err.code === 'ENOTFOUND') {  // unlisted
+            if (err.code === dns.NOTFOUND) {  // unlisted
                 return cb(null, a);          // not an error for a DNSBL
             }
         }
@@ -188,6 +188,13 @@ exports.check_zones = function (interval) {
         this._interval = setInterval(function () {
             self.check_zones();
         }, (interval * 60) * 1000);
+    }
+};
+
+exports.shutdown = function () {
+    clearInterval(this._interval);
+    if (redis_client) {
+        redis_client.quit();
     }
 };
 

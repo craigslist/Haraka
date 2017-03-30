@@ -57,9 +57,11 @@ exports.duplicate_singular = function(next, connection) {
     // RFC 5322 Section 3.6, Headers that MUST be unique if present
     var singular = plugin.cfg.main.singular !== undefined ?
                    plugin.cfg.main.singular.split(',') :
-                   ['Date', 'From', 'Sender', 'Reply-To', 'To', 'Cc',
-                    'Bcc', 'Message-Id', 'In-Reply-To', 'References',
-                    'Subject'];
+    [
+        'Date', 'From', 'Sender', 'Reply-To', 'To', 'Cc',
+        'Bcc', 'Message-Id', 'In-Reply-To', 'References',
+        'Subject'
+    ];
 
     var failures = [];
     for (var i=0; i < singular.length; i++ ) {
@@ -285,6 +287,10 @@ exports.from_match = function (next, connection) {
     }
 
     var hdr_addr = (plugin.addrparser.parse(hdr_from))[0];
+    if (!hdr_addr) {
+        connection.transaction.results.add(plugin, {fail: 'from_match(unparsable)'});
+        return next();
+    }
 
     if (env_addr.address().toLowerCase() === hdr_addr.address.toLowerCase()) {
         connection.transaction.results.add(plugin, {pass: 'from_match'});
@@ -367,7 +373,9 @@ exports.mailing_list = function (next, connection) {
                     found_mlm++;
                     continue;
                 }
-                connection.logerror(plugin, "mlm start miss: " + name + ': ' + header);
+                // NOTE: Unlike the next "j.match" code block, this condition alone
+                //       (Sender header != "owner-...") should not log an error
+                connection.logdebug(plugin, "mlm start miss: " + name + ': ' + header);
             }
             if (j.match) {
                 if (header.match(new RegExp(j.match,'i'))) {

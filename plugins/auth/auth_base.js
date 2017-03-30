@@ -3,7 +3,7 @@
 // See plugins/auth/flat_file.js for an example.
 
 var crypto = require('crypto');
-var utils = require('./utils');
+var utils = require('haraka-utils');
 var AUTH_COMMAND = 'AUTH';
 var AUTH_METHOD_CRAM_MD5 = 'CRAM-MD5';
 var AUTH_METHOD_PLAIN = 'PLAIN';
@@ -13,7 +13,7 @@ var LOGIN_STRING2 = 'UGFzc3dvcmQ6'; //Password: base64 coded
 
 exports.hook_capabilities = function (next, connection) {
     // Don't offer AUTH capabilities unless session is encrypted
-    if (!connection.using_tls) { return next(); }
+    if (!connection.tls.enabled) { return next(); }
 
     var methods = [ 'PLAIN', 'LOGIN', 'CRAM-MD5' ];
     connection.capabilities.push('AUTH ' + methods.join(' '));
@@ -22,7 +22,7 @@ exports.hook_capabilities = function (next, connection) {
 };
 
 // Override this at a minimum. Run cb(passwd) to provide a password.
-exports.get_plain_passwd = function (user, cb) {
+exports.get_plain_passwd = function (user, connection, cb) {
     return cb();
 };
 
@@ -48,15 +48,24 @@ exports.hook_unrecognized_command = function (next, connection, params) {
 };
 
 exports.check_plain_passwd = function (connection, user, passwd, cb) {
-    this.get_plain_passwd(user, function (plain_pw) {
+    var callback = function (plain_pw) {
         if (plain_pw === null  ) { return cb(false); }
         if (plain_pw !== passwd) { return cb(false); }
         return cb(true);
-    });
+    }
+    if (this.get_plain_passwd.length == 2) {
+        this.get_plain_passwd(user, callback);
+    }
+    else if (this.get_plain_passwd.length == 3) {
+        this.get_plain_passwd(user, connection, callback);
+    }
+    else {
+        throw "Invalid number of arguments for get_plain_passwd";
+    }
 };
 
 exports.check_cram_md5_passwd = function (connection, user, passwd, cb) {
-    this.get_plain_passwd(user, function (plain_pw) {
+    var callback = function (plain_pw) {
         if (plain_pw == null) {
             return cb(false);
         }
@@ -68,7 +77,16 @@ exports.check_cram_md5_passwd = function (connection, user, passwd, cb) {
             return cb(true);
         }
         return cb(false);
-    });
+    };
+    if (this.get_plain_passwd.length == 2) {
+        this.get_plain_passwd(user, callback);
+    }
+    else if (this.get_plain_passwd.length == 3) {
+        this.get_plain_passwd(user, connection, callback);
+    }
+    else {
+        throw "Invalid number of arguments for get_plain_passwd";
+    }
 };
 
 exports.check_user = function (next, connection, credentials, method) {
@@ -141,7 +159,7 @@ exports.check_user = function (next, connection, credentials, method) {
     }
 };
 
-exports.select_auth_method = function(next, connection, method) {
+exports.select_auth_method = function (next, connection, method) {
     var split = method.split(/\s+/);
     method = split.shift().toUpperCase();
     if (!connection.notes.allowed_auth_methods) return next();
@@ -163,21 +181,31 @@ exports.select_auth_method = function(next, connection, method) {
     }
 };
 
-exports.auth_plain = function(next, connection, params) {
+exports.auth_plain = function (next, connection, params) {
     var plugin = this;
-    if (!params || !params.length) {
-        connection.respond(334, ' ', function () {
-            return next(OK);
-        });
-        return;
+    // one parameter given on line, either:
+    //    AUTH PLAIN <param> or
+    //    AUTH PLAIN\n
+    //...
+    //    <param>
+    if (params[0]) {
+        var credentials = utils.unbase64(params[0]).split(/\0/);
+        credentials.shift();  // Discard authid
+        return plugin.check_user(next, connection, credentials, AUTH_METHOD_PLAIN);
+    } else {
+        if (connection.notes.auth_plain_asked_login) {
+            return next(DENYDISCONNECT, 'bad protocol');
+        } else {
+            connection.respond(334, ' ', function () {
+                connection.notes.auth_plain_asked_login = true;
+                return next(OK);
+            });
+            return;
+        }
     }
-
-    var credentials = utils.unbase64(params[0]).split(/\0/);
-    credentials.shift();  // Discard authid
-    return plugin.check_user(next, connection, credentials, AUTH_METHOD_PLAIN);
 };
 
-exports.auth_login = function(next, connection, params) {
+exports.auth_login = function (next, connection, params) {
     var plugin = this;
     if ((!connection.notes.auth_login_asked_login && params[0]) ||
         ( connection.notes.auth_login_asked_login &&
@@ -211,7 +239,7 @@ exports.auth_login = function(next, connection, params) {
     });
 };
 
-exports.auth_cram_md5 = function(next, connection, params) {
+exports.auth_cram_md5 = function (next, connection, params) {
     var plugin = this;
     if (params) {
         var credentials = utils.unbase64(params[0]).split(' ');

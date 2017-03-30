@@ -3,9 +3,6 @@
 var Address      = require('address-rfc2821');
 var fixtures     = require('haraka-test-fixtures');
 
-var Connection   = fixtures.connection;
-var ResultStore  = fixtures.result_store;
-
 var Header       = require('../../mailheader').Header;
 
 var _set_up = function (done) {
@@ -19,18 +16,17 @@ var _set_up = function (done) {
     }
     catch (ignore) {}
 
-    this.connection = Connection.createConnection();
+    this.connection = fixtures.connection.createConnection();
 
     this.connection.transaction = {
         header: new Header(),
-        results: new ResultStore(this.plugin),
+        results: new fixtures.results(this.plugin),
         rcpt_to: [],
     };
 
     done();
 };
 
-/* jshint maxlen: false */
 exports.invalid_date = {
     setUp : _set_up,
     'none': function (test) {
@@ -44,7 +40,7 @@ exports.user_agent = {
     'none': function (test) {
         test.expect(2);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /UA/.test(r.fail));
             test.equal(false, /UA/.test(r.pass));
@@ -56,7 +52,7 @@ exports.user_agent = {
     'user-agent': function (test) {
         test.expect(2);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /UA/.test(r.pass));
             test.equal(false, /UA/.test(r.fail));
@@ -69,7 +65,7 @@ exports.user_agent = {
     'X-mailer': function (test) {
         test.expect(2);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /UA/.test(r.pass));
             test.equal(false, /UA/.test(r.fail));
@@ -87,7 +83,7 @@ exports.direct_to_mx = {
         test.expect(3);
         this.connection.notes.auth_user = 'test@example.com';
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /^direct-to-mx/.test(r.skip));
             test.equal(false, /^direct-to-mx/.test(r.pass));
@@ -100,7 +96,7 @@ exports.direct_to_mx = {
     'received 0': function (test) {
         test.expect(3);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /^direct-to-mx/.test(r.fail));
             test.equal(false, /^direct-to-mx/.test(r.pass));
@@ -113,7 +109,7 @@ exports.direct_to_mx = {
     'received 1': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /^direct-to-mx/.test(r.fail));
         };
@@ -125,7 +121,7 @@ exports.direct_to_mx = {
     'received 2': function (test) {
         test.expect(3);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /^direct-to-mx/.test(r.pass));
             test.equal(false, /^direct-to-mx/.test(r.fail));
@@ -144,7 +140,7 @@ exports.from_match = {
     'match bare': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.notEqual(-1, r.pass.indexOf('from_match'));
         };
@@ -157,7 +153,7 @@ exports.from_match = {
     'match typical': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.notEqual(-1, r.pass.indexOf('from_match'));
         };
@@ -170,7 +166,7 @@ exports.from_match = {
     'match unquoted': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.notEqual(-1, r.pass.indexOf('from_match'));
         };
@@ -183,7 +179,7 @@ exports.from_match = {
     'mismatch': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /^from_match/.test(r.fail));
         };
@@ -200,7 +196,7 @@ exports.mailing_list = {
     'ezmlm true': function (test) {
         test.expect(2);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /ezmlm/.test(r.pass));
             test.equal(0, r.fail.length);
@@ -213,7 +209,7 @@ exports.mailing_list = {
     'ezmlm false': function (test) {
         test.expect(2);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(r.pass.length, 0);
             test.equal(true, /not/.test(r.msg));
@@ -226,7 +222,7 @@ exports.mailing_list = {
     'yahoogroups': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /yahoogroups/.test(r.pass));
         };
@@ -238,7 +234,7 @@ exports.mailing_list = {
     'majordomo': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /majordomo/.test(r.pass));
         };
@@ -251,7 +247,7 @@ exports.mailing_list = {
         test.expect(1);
         var outer = this;
         outer.connection.transaction.header.add_end('X-Mailman-Version', "owner-blah-blah whatcha");
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /mailman/.test(r.pass));
         };
@@ -262,7 +258,7 @@ exports.mailing_list = {
     'majordomo v': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /majordomo/.test(r.pass));
         };
@@ -274,7 +270,7 @@ exports.mailing_list = {
     'google groups': function (test) {
         test.expect(1);
         var outer = this;
-        var next_cb = function() {
+        var next_cb = function () {
             var r = outer.connection.transaction.results.get('data.headers');
             test.equal(true, /googlegroups/.test(r.pass));
         };
@@ -289,7 +285,7 @@ exports.delivered_to = {
     setUp : _set_up,
     'disabled': function (test) {
         test.expect(2);
-        var next_cb = function(res, msg) {
+        var next_cb = function (res, msg) {
             test.equal(undefined, res);
             test.equal(undefined, msg);
             test.done();
@@ -299,7 +295,7 @@ exports.delivered_to = {
     },
     'header not present': function (test) {
         test.expect(2);
-        var next_cb = function(res, msg) {
+        var next_cb = function (res, msg) {
             test.equal(undefined, res);
             test.equal(undefined, msg);
             test.done();
@@ -309,7 +305,7 @@ exports.delivered_to = {
     },
     'no recipient match': function (test) {
         test.expect(2);
-        var next_cb = function(res, msg) {
+        var next_cb = function (res, msg) {
             test.equal(undefined, res);
             test.equal(undefined, msg);
             test.done();
@@ -321,7 +317,7 @@ exports.delivered_to = {
     },
     'recipient match': function (test) {
         test.expect(2);
-        var next_cb = function(res, msg) {
+        var next_cb = function (res, msg) {
             test.equal(DENY, res);
             test.equal('Invalid Delivered-To header content', msg);
             test.done();
@@ -334,7 +330,7 @@ exports.delivered_to = {
     },
     'recipient match, reject disabled': function (test) {
         test.expect(2);
-        var next_cb = function(res, msg) {
+        var next_cb = function (res, msg) {
             test.equal(undefined, res);
             test.equal(undefined, msg);
             test.done();

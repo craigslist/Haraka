@@ -1,6 +1,6 @@
 // Proxy AUTH requests selectively by domain
 var sock  = require('./line_socket');
-var utils = require('./utils');
+var utils = require('haraka-utils');
 var smtp_regexp = /^([0-9]{3})([ -])(.*)/;
 
 exports.register = function () {
@@ -8,7 +8,7 @@ exports.register = function () {
 };
 
 exports.hook_capabilities = function (next, connection) {
-    if (connection.using_tls) {
+    if (connection.tls.enabled) {
         var methods = [ 'PLAIN', 'LOGIN' ];
         connection.capabilities.push('AUTH ' + methods.join(' '));
         connection.notes.allowed_auth_methods = methods;

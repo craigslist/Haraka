@@ -28,7 +28,7 @@ exports.newMockHMailItem = function (outbound_context, test, options, callback) 
             }
             if (!hmail.todo) {
                 hmail.once('ready', function () {
-                    process.nextTick(function(){callback(hmail);});
+                    setImmediate(function (){callback(hmail);});
                 });
             }
             else {
@@ -69,7 +69,7 @@ exports.createHMailItem = function (outbound_context, options, callback) {
         ""].join("\n");
     var match;
     var re = /^([^\n]*\n?)/;
-    while (match = re.exec(contents)) {
+    while ((match = re.exec(contents))) {
         var line = match[1];
         line = line.replace(/\r?\n?$/, '\r\n'); // make sure it ends in \r\n
         conn.transaction.add_data(new Buffer(line));
@@ -106,7 +106,7 @@ exports.createHMailItem = function (outbound_context, options, callback) {
  * @param test
  * @param playbook
  */
-exports.playTestSmtpConversation = function(hmail, socket, test, playbook, callback) {
+exports.playTestSmtpConversation = function (hmail, socket, test, playbook, callback) {
     var testmx = {
         bind_helo: "haraka.test",
         exchange: "remote.testhost",
@@ -148,7 +148,7 @@ exports.playTestSmtpConversation = function(hmail, socket, test, playbook, callb
 
 }
 
-function getNextEntryFromPlaybook(ofType, playbook) {
+function getNextEntryFromPlaybook (ofType, playbook) {
     if (playbook.length == 0) {
         return false;
     }

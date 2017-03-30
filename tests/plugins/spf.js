@@ -1,11 +1,7 @@
 'use strict';
 
-var path         = require('path');
-
 var Address      = require('address-rfc2821').Address;
 var fixtures     = require('haraka-test-fixtures');
-
-var Connection   = fixtures.connection;
 
 var SPF          = require('../../spf').SPF;
 var spf          = new SPF();
@@ -13,10 +9,15 @@ var spf          = new SPF();
 var _set_up = function (done) {
 
     this.plugin = new fixtures.plugin('spf');
-    this.plugin.config.root_path = path.resolve(__dirname, '../../config');
-    this.plugin.cfg = { main: { }, defer: {}, deny: {} };
+    this.plugin.load_config();
+    this.plugin.timeout = 8000;
 
-    this.connection = Connection.createConnection();
+    // uncomment this line to see detailed SPF evaluation
+    this.plugin.SPF.prototype.log_debug = function () {};
+
+    this.connection = fixtures.connection.createConnection();
+    this.connection.transaction = fixtures.transaction.createTransaction();
+    this.connection.transaction.results = new fixtures.results(this.connection);
 
     done();
 };
@@ -148,14 +149,11 @@ exports.hook_helo = {
         var next = function (rc) {
             completed++;
             test.equal(undefined, rc);
-            if (completed >= 3) test.done();
+            if (completed >= 2) test.done();
         };
-        test.expect(3);
-        this.connection.remote_ip='192.168.1.1';
+        test.expect(2);
+        this.connection.remote.is_private=true;
         this.plugin.hook_helo(next, this.connection);
-        this.connection.remote_ip='10.0.1.1';
-        this.plugin.hook_helo(next, this.connection);
-        this.connection.remote_ip='127.0.0.1';
         this.plugin.hook_helo(next, this.connection, 'helo.sender.com');
     },
     'IPv4 literal': function (test) {
@@ -164,11 +162,13 @@ exports.hook_helo = {
             test.done();
         };
         test.expect(1);
-        this.connection.remote_ip='190.168.1.1';
+        this.connection.remote.ip='190.168.1.1';
         this.plugin.hook_helo(next, this.connection, '[190.168.1.1]' );
     },
 
 };
+
+var test_addr = new Address('<test@example.com>');
 
 exports.hook_mail = {
     setUp : _set_up,
@@ -178,8 +178,9 @@ exports.hook_mail = {
             test.done();
         };
         test.expect(1);
-        this.connection.remote_ip='192.168.1.1';
-        this.plugin.hook_mail(next, this.connection);
+        this.connection.remote.is_private=true;
+        this.connection.remote.ip='192.168.1.1';
+        this.plugin.hook_mail(next, this.connection, [test_addr]);
     },
     'rfc1918 relaying': function (test) {
         var next = function () {
@@ -187,9 +188,10 @@ exports.hook_mail = {
             test.done();
         };
         test.expect(1);
-        this.connection.remote_ip='192.168.1.1';
+        this.connection.remote.is_private=true;
+        this.connection.remote.ip='192.168.1.1';
         this.connection.relaying=true;
-        this.plugin.hook_mail(next, this.connection);
+        this.plugin.hook_mail(next, this.connection, [test_addr]);
     },
     'no txn': function (test) {
         var next = function () {
@@ -197,7 +199,8 @@ exports.hook_mail = {
             test.done();
         };
         test.expect(1);
-        this.connection.remote_ip='207.85.1.1';
+        this.connection.remote.ip='207.85.1.1';
+        delete this.connection.transaction;
         this.plugin.hook_mail(next, this.connection);
     },
     'txn, no helo': function (test) {
@@ -206,9 +209,9 @@ exports.hook_mail = {
             test.done();
         };
         test.expect(1);
-        this.connection.remote_ip='207.85.1.1';
-        this.plugin.hook_mail(next, this.connection,
-            [new Address('<test@example.com>')]);
+        this.plugin.cfg.deny.mfrom_fail = false;
+        this.connection.remote.ip='207.85.1.1';
+        this.plugin.hook_mail(next, this.connection, [test_addr]);
     },
     'txn': function (test) {
         var next = function (rc) {
@@ -216,10 +219,9 @@ exports.hook_mail = {
             test.done();
         };
         test.expect(1);
-        this.connection.remote_ip='207.85.1.1';
-        this.connection.hello_host = 'mail.example.com';
-        this.plugin.hook_mail(next, this.connection,
-            [new Address('<test@example.com>')]);
+        this.connection.set('remote', 'ip', '207.85.1.1');
+        this.connection.set('hello', 'host', 'mail.example.com');
+        this.plugin.hook_mail(next, this.connection, [test_addr]);
     },
     'txn, relaying': function (test) {
         var next = function (rc) {
@@ -227,11 +229,25 @@ exports.hook_mail = {
             test.done();
         };
         test.expect(1);
-        this.connection.remote_ip='207.85.1.1';
+        this.connection.set('remote', 'ip', '207.85.1.1');
         this.connection.relaying=true;
-        this.connection.hello_host = 'mail.example.com';
-        this.plugin.hook_mail(next, this.connection,
-            [new Address('<test@example.com>')]);
+        this.connection.set('hello', 'host', 'mail.example.com');
+        this.plugin.hook_mail(next, this.connection, [test_addr]);
+    },
+    'txn, relaying, is_private': function (test) {
+        var next = function (rc) {
+            test.equal(undefined, rc);
+            test.done();
+        };
+        test.expect(1);
+        this.plugin.cfg.relay.context='myself';
+        this.plugin.cfg.deny_relay.mfrom_fail = true;
+        this.connection.set('remote', 'ip', '127.0.1.1');
+        this.connection.set('remote', 'is_private', true);
+        this.connection.relaying = true;
+        this.connection.set('hello', 'host', 'www.tnpi.net');
+        this.plugin.nu.public_ip = '66.128.51.165';
+        this.plugin.hook_mail(next, this.connection, [new Address('<nonexist@tnpi.net>')]);
     },
 };
 

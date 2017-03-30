@@ -1,4 +1,5 @@
 'use strict';
+/*eslint no-unused-vars: ["error", { "varsIgnorePattern": "queue_dir", "args": "none" }]*/
 
 test.expect(54);
 
@@ -26,7 +27,7 @@ async.series(
         // test that MAIL FROM responded with 500 5.0.0 triggers
         // send_email() containing bounce msg with  our codes and message
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var mock_socket = mock_sock.connect('testhost', 'testport');
                 mock_socket.writable = true;
 
@@ -50,24 +51,24 @@ async.series(
                     // Haraka connects, we say first
                     { 'from': 'remote', 'line': '220 testing-smtp' },
 
-                    { 'from': 'haraka', 'test': function(line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO', },
+                    { 'from': 'haraka', 'test': function (line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO' },
                     { 'from': 'remote', 'line': '220-testing-smtp' },
                     { 'from': 'remote', 'line': '220 8BITMIME' },
 
                     { 'from': 'haraka', 'test': 'MAIL FROM:<sender@domain>' },
                     { 'from': 'remote', 'line': '500 5.0.0 Absolutely not acceptable. Basic Test Only.' },
 
-                    { 'from': 'haraka', 'test': 'QUIT', end_test: true }, // this will trigger calling the callback
+                    { 'from': 'haraka', 'test': 'RSET', end_test: true }, // this will trigger calling the callback
                 ];
 
-                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function() {
+                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function () {
 
                 });
             });
         },
         // test that early response of 3XX triggers temp_fail
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var mock_socket = mock_sock.connect('testhost', 'testport');
                 mock_socket.writable = true;
 
@@ -83,24 +84,24 @@ async.series(
                 var testPlaybook = [
                     { 'from': 'remote', 'line': '220 testing-smtp' },
 
-                    { 'from': 'haraka', 'test': function(line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO', },
+                    { 'from': 'haraka', 'test': function (line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO' },
                     { 'from': 'remote', 'line': '220-testing-smtp' },
                     { 'from': 'remote', 'line': '220 8BITMIME' },
 
                     { 'from': 'haraka', 'test': 'MAIL FROM:<sender@domain>' },
                     { 'from': 'remote', 'line': '300 3.0.0 No time for you right now' },
 
-                    { 'from': 'haraka', 'test': 'QUIT', end_test: true }, // this will trigger calling the callback
+                    { 'from': 'haraka', 'test': 'RSET', end_test: true }, // this will trigger calling the callback
                 ];
 
-                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function() {
+                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function () {
 
                 });
             });
         },
         // test that response of 4XX for RCPT-TO triggers temp_fail
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var mock_socket = mock_sock.connect('testhost', 'testport');
                 mock_socket.writable = true;
 
@@ -116,7 +117,7 @@ async.series(
                 var testPlaybook = [
                     { 'from': 'remote', 'line': '220 testing-smtp' },
 
-                    { 'from': 'haraka', 'test': function(line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO', },
+                    { 'from': 'haraka', 'test': function (line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO' },
                     { 'from': 'remote', 'line': '220-testing-smtp' },
                     { 'from': 'remote', 'line': '220 8BITMIME' },
 
@@ -126,10 +127,10 @@ async.series(
                     { 'from': 'haraka', 'test': 'RCPT TO:<recipient@domain>' },
                     { 'from': 'remote', 'line': '400 4.0.0 Currently not available. Try again later.' },
 
-                    { 'from': 'haraka', 'test': 'QUIT', end_test: true }, // this will trigger calling the callback
+                    { 'from': 'haraka', 'test': 'RSET', end_test: true }, // this will trigger calling the callback
                 ];
 
-                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function() {
+                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function () {
 
                 });
             });
@@ -137,7 +138,7 @@ async.series(
 
         // test that response of 4XX for DATA triggers temp_fail
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var mock_socket = mock_sock.connect('testhost', 'testport');
                 mock_socket.writable = true;
 
@@ -153,7 +154,7 @@ async.series(
                 var testPlaybook = [
                     { 'from': 'remote', 'line': '220 testing-smtp' },
 
-                    { 'from': 'haraka', 'test': function(line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO', },
+                    { 'from': 'haraka', 'test': function (line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO' },
                     { 'from': 'remote', 'line': '220-testing-smtp' },
                     { 'from': 'remote', 'line': '220 8BITMIME' },
 
@@ -167,10 +168,10 @@ async.series(
                     // haraka will send us more lines
                     { 'from': 'remote', 'line': '450 4.6.0 Currently I do not like ascii art cats.' },
 
-                    { 'from': 'haraka', 'test': 'QUIT', end_test: true }, // this will trigger calling the callback
+                    { 'from': 'haraka', 'test': 'RSET', end_test: true }, // this will trigger calling the callback
                 ];
 
-                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function() {
+                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function () {
 
                 });
             });
@@ -178,7 +179,7 @@ async.series(
         // test that response of 5XX for RCPT-TO triggers
         // send_email() containing bounce msg with  our codes and message
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var mock_socket = mock_sock.connect('testhost', 'testport');
                 mock_socket.writable = true;
 
@@ -196,7 +197,7 @@ async.series(
                 var testPlaybook = [
                     { 'from': 'remote', 'line': '220 testing-smtp' },
 
-                    { 'from': 'haraka', 'test': function(line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO', },
+                    { 'from': 'haraka', 'test': function (line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO' },
                     { 'from': 'remote', 'line': '220-testing-smtp' },
                     { 'from': 'remote', 'line': '220 8BITMIME' },
 
@@ -206,10 +207,10 @@ async.series(
                     { 'from': 'haraka', 'test': 'RCPT TO:<recipient@domain>' },
                     { 'from': 'remote', 'line': '550 5.1.1 Not available and will not come back' },
 
-                    { 'from': 'haraka', 'test': 'QUIT', end_test: true }, // this will trigger calling the callback
+                    { 'from': 'haraka', 'test': 'RSET', end_test: true }, // this will trigger calling the callback
                 ];
 
-                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function() {
+                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function () {
 
                 });
             });
@@ -217,7 +218,7 @@ async.series(
         // test that response of 5XX for DATA triggers
         // send_email() containing bounce msg with  our codes and message
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var mock_socket = mock_sock.connect('testhost', 'testport');
                 mock_socket.writable = true;
 
@@ -235,7 +236,7 @@ async.series(
                 var testPlaybook = [
                     { 'from': 'remote', 'line': '220 testing-smtp' },
 
-                    { 'from': 'haraka', 'test': function(line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO', },
+                    { 'from': 'haraka', 'test': function (line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO' },
                     { 'from': 'remote', 'line': '220-testing-smtp' },
                     { 'from': 'remote', 'line': '220 8BITMIME' },
 
@@ -249,10 +250,10 @@ async.series(
                     // haraka will send us more lines
                     { 'from': 'remote', 'line': '550 5.6.0 I never did and will like ascii art cats.' },
 
-                    { 'from': 'haraka', 'test': 'QUIT', end_test: true }, // this will trigger calling the callback
+                    { 'from': 'haraka', 'test': 'RSET', end_test: true }, // this will trigger calling the callback
                 ];
 
-                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function() {
+                util_hmailitem.playTestSmtpConversation(mock_hmail, mock_socket, test, testPlaybook, function () {
 
                 });
             });

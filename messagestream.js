@@ -1,10 +1,13 @@
+'use strict';
+
 // MessageStream class
 
 var fs = require('fs');
 var util = require('util');
 var Stream = require('stream').Stream;
+var utils = require('haraka-utils');
+
 var ChunkEmitter = require('./chunkemitter');
-var indexOfLF = require('./utils').indexOfLF;
 
 var STATE_HEADERS = 1;
 var STATE_BODY = 2;
@@ -139,7 +142,7 @@ MessageStream.prototype._write = function (data) {
         // Do we have any waiting readers?
         if (this.listeners('data').length && !this.write_complete) {
             this.write_complete = true;
-            process.nextTick(function () {
+            setImmediate(function () {
                 if (self.readable && !self.paused)
                     self._read();
             });
@@ -166,7 +169,7 @@ MessageStream.prototype._write = function (data) {
         this.ws.on('open', function (fd) {
             self.fd = fd;
             self.open_pending = false;
-            process.nextTick(function () {
+            setImmediate(function () {
                 self._write();
             });
         });
@@ -183,7 +186,7 @@ MessageStream.prototype._write = function (data) {
         this.write_pending = true;
         this.ws.once('drain', function () {
             self.write_pending = false;
-            process.nextTick(function () {
+            setImmediate(function () {
                 self._write();
             });
         });
@@ -222,13 +225,13 @@ MessageStream.prototype._read = function () {
     // loop around again (and check for pause).
     if (this.headers.length && !this.headers_done) {
         this.headers_done = true;
-        for (var i=0; i<this.headers.length; i++) {
+        for (let i=0; i<this.headers.length; i++) {
             this.read_ce.fill(this.headers[i].replace(/\r?\n/g,this.line_endings));
         }
         // Add end of headers marker
         this.read_ce.fill(this.line_endings);
         // Loop
-        process.nextTick(function () {
+        setImmediate(function () {
             if (self.readable && !self.paused)
                 self._read();
         });
@@ -239,7 +242,7 @@ MessageStream.prototype._read = function () {
         // create a queue file, so we read from memory.
         if (this._queue.length > 0) {
             // TODO: implement start/end offsets
-            for (var i=0; i<this._queue.length; i++) {
+            for (let i=0; i<this._queue.length; i++) {
                 this.process_buf(this._queue[i].slice(0));
             }
             this._read_finish();
@@ -263,7 +266,7 @@ MessageStream.prototype._read = function () {
 
 MessageStream.prototype.process_buf = function (buf) {
     var offset = 0;
-    while ((offset = indexOfLF(buf)) !== -1) {
+    while ((offset = utils.indexOfLF(buf)) !== -1) {
         var line = buf.slice(0, offset+1);
         buf = buf.slice(line.length);
         // Don't output headers if they where sent already
@@ -355,7 +358,7 @@ MessageStream.prototype.pipe = function (destination, options) {
     // Stream won't be readable until we've finished writing and add_line_end() has been called.
     // As we've registered for events above, the _write() function can now detect that we
     // are waiting for the data and will call _read() automatically when it is finished.
-    if (!this.write_complete) return;
+    if (!this.write_complete) return destination;
     // Create this.fd only if it doesn't already exist
     // This is so we can re-use the already open descriptor
     if (!this.fd && !(this._queue.length > 0)) {

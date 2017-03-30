@@ -57,44 +57,47 @@ exports.get_timeout = {
     setUp : function (done) {
         process.env.WITHOUT_CONFIG_CACHE=true;
         this.to = getVal();
-        fs.writeFile(toPath, this.to, done);
+        var self = this;
+        fs.writeFile(toPath, this.to, function () {
+            self.plugin = new plugin.Plugin(piName);
+            done();
+        });
     },
     tearDown : function (done) {
         fs.unlink(toPath, done);
     },
     '0s' : function (test) {
-        var pi = new plugin.Plugin(piName);
         test.expect(1);
-        test.equal( pi.timeout, this.to );
+        test.equal( this.plugin.timeout, this.to );
         test.done();
     },
     '3s' : function (test) {
-        var pi = new plugin.Plugin(piName);
         test.expect(1);
-        test.equal( pi.timeout, this.to );
+        test.equal( this.plugin.timeout, this.to );
         test.done();
     },
     '60s' : function (test) {
-        var pi = new plugin.Plugin(piName);
         test.expect(1);
-        test.equal( pi.timeout, this.to );
+        test.equal( this.plugin.timeout, this.to );
         test.done();
     },
     '30s default (overrides NaN apple)' : function (test) {
-        var pi = new plugin.Plugin(piName);
         test.expect(1);
-        test.equal( pi.timeout, 30 );
+        test.equal( this.plugin.timeout, 30 );
         test.done();
     },
 };
 
 exports.plugin_paths = {
-
-    /* jshint maxlen: 90 */
-
+    setUp : function (done) {
+        process.env.HARAKA = '';
+        done();
+    },
+    tearDown : function (done) {
+        process.env.HARAKA = '';
+        done();
+    },
     'CORE plugin: (tls)' : function (test) {
-        delete process.env.HARAKA;
-
         var p = new plugin.Plugin('tls');
 
         test.expect(1);
@@ -109,25 +112,6 @@ exports.plugin_paths = {
 
         test.expect(1);
         test.equal(p.plugin_path, path.resolve(__dirname, 'installation', 'plugins', 'tls.js'));
-        test.done();
-    },
-
-    'CORE package plugin: (watch)': function (test) {
-        delete process.env.HARAKA;
-
-        var p = new plugin.Plugin('watch');
-
-        test.expect(3);
-        test.equal(p.plugin_path, path.resolve(__dirname, '..', 'plugins', 'watch', 'package.json'));
-        test.ok(p.hasPackageJson);
-        try {
-            p._compile();
-            test.ok(true, "compiles OK");
-        }
-        catch (e) {
-            console.error(e.stack);
-            test.ok(false, "compiles OK");
-        }
         test.done();
     },
 
@@ -150,11 +134,11 @@ exports.plugin_paths = {
         test.done();
     },
 
-    'CORE package plugin: (faked using address-rfc2822)': function (test) {
-        var p = new plugin.Plugin('address-rfc2822');
+    'CORE package plugin: asn': function (test) {
+        var p = new plugin.Plugin('haraka-plugin-asn');
 
         test.expect(2);
-        test.equal(p.plugin_path, path.resolve(__dirname, '..', 'node_modules', 'address-rfc2822', 'package.json'));
+        test.equal(p.plugin_path, path.resolve(__dirname, '..', 'node_modules', 'haraka-plugin-asn', 'package.json'));
         test.ok(p.hasPackageJson);
         test.done();
     },
@@ -220,10 +204,15 @@ exports.plugin_paths = {
 };
 
 exports.plugin_config = {
-    /* jshint maxlen: 90 */
-
+    setUp : function (done) {
+        process.env.HARAKA = '';
+        done();
+    },
+    tearDown : function (done) {
+        process.env.HARAKA = '';
+        done();
+    },
     'CORE plugin: (tls)' : function (test) {
-        delete process.env.HARAKA;
 
         var p = new plugin.Plugin('tls');
 
@@ -238,20 +227,11 @@ exports.plugin_config = {
 
         var p = new plugin.Plugin('tls');
 
-        test.expect(2);
+        test.expect(3);
         test.equal(p.config.root_path, path.resolve(__dirname, '..', 'config'));
         test.equal(p.config.overrides_path, path.resolve(__dirname, 'installation', 'config'));
-        test.done();
-    },
-
-    'CORE package plugin: (watch)': function (test) {
-        delete process.env.HARAKA;
-
-        var p = new plugin.Plugin('watch');
-
-        test.expect(2);
-        test.equal(p.config.root_path, path.resolve(__dirname, '..', 'plugins', 'watch', 'config'));
-        test.equal(p.config.overrides_path, path.resolve(__dirname, '..', 'config'));
+        var tls_ini = p.config.get('tls.ini');
+        test.equal(tls_ini.main.ciphers, 'test');
         test.done();
     },
 
@@ -265,6 +245,5 @@ exports.plugin_config = {
         test.equal(p.config.overrides_path, path.resolve(__dirname, 'installation', 'config'));
         test.done();
     },
-
 }
 

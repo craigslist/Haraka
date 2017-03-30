@@ -5,6 +5,7 @@ Haraka - a Node.js Mail Server
 [![Build Status][ci-img]][ci-url]
 [![Coverage Status][cov-img]][cov-url]
 [![Windows Status][ci-win-img]][ci-win-url]
+[![Greenkeeper badge](https://badges.greenkeeper.io/haraka/Haraka.svg)](https://greenkeeper.io/)
 
 
 Haraka is a highly scalable [node.js][1] email server with a modular
@@ -16,7 +17,7 @@ Haraka has very good spam protection (see [plugins][4]) and works
 well as a filtering [MTA][3]. It also works well as a [MSA][5] running on
 port 587 with auth and [dkim_sign][6] plugins enabled.
 
-Haraka makes no attempt to be a mail store (like Exchange or Postix/Exim/Qmail),
+Haraka makes no attempt to be a mail store (like Exchange or Postfix/Exim/Qmail),
 a [LDA][7], nor an IMAP server (like Dovecot or Courier). Haraka is
 typically used **with** such systems.
 

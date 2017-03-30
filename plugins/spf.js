@@ -1,20 +1,24 @@
 // spf
 
 var SPF = require('./spf').SPF;
-var net_utils = require('./net_utils');
-
-// Override logging in SPF module
-SPF.prototype.log_debug = function (str) {
-    return plugin.logdebug(str);
-};
+var net_utils = require('haraka-net-utils');
 
 exports.register = function () {
     var plugin = this;
+
+    // Override logging in SPF module
+    SPF.prototype.log_debug = function (str) {
+        return plugin.logdebug(str);
+    };
+
     plugin.load_config();
 };
 
 exports.load_config = function () {
     var plugin = this;
+    plugin.nu = net_utils;   // so tests can set public_ip
+    plugin.SPF = SPF;
+
     plugin.cfg = plugin.config.get('spf.ini', {
         booleans: [
             '-defer.helo_temperror',
@@ -68,7 +72,7 @@ exports.hook_helo = exports.hook_ehlo = function (next, connection, helo) {
     var plugin = this;
 
     // Bypass private IPs
-    if (net_utils.is_private_ip(connection.remote_ip)) { return next(); }
+    if (connection.remote.is_private) { return next(); }
 
     // RFC 4408, 2.1: "SPF clients must be prepared for the "HELO"
     //           identity to be malformed or an IP address literal.
@@ -84,15 +88,15 @@ exports.hook_helo = exports.hook_ehlo = function (next, connection, helo) {
         connection.logerror(plugin, 'timeout');
         return next();
     }, (plugin.timeout-1) * 1000);
-    spf.hello_host = helo;
-    spf.check_host(connection.remote_ip, helo, null, function (err, result) {
+
+    spf.check_host(connection.remote.ip, helo, null, function (err, result) {
         if (timer) clearTimeout(timer);
         if (timeout) return;
         if (err) {
             connection.logerror(plugin, err);
             return next();
         }
-        var host = connection.hello_host;
+        var host = connection.hello.host;
         plugin.log_result(connection, 'helo', host, 'postmaster@' +
             host, spf.result(result));
 
@@ -110,10 +114,10 @@ exports.hook_helo = exports.hook_ehlo = function (next, connection, helo) {
 exports.hook_mail = function (next, connection, params) {
     var plugin = this;
 
-    // For inbound message from a private IP, skip MAIL FROM check
-    if (!connection.relaying &&
-         net_utils.is_private_ip(connection.remote_ip)) {
-        return next();
+    // For messages from private IP space...
+    if (connection.remote.is_private) {
+        if (!connection.relaying) return next();
+        if (connection.relaying && plugin.cfg.relay.context !== 'myself') return next();
     }
 
     var txn = connection.transaction;
@@ -122,13 +126,14 @@ exports.hook_mail = function (next, connection, params) {
     var mfrom = params[0].address();
     var host = params[0].host;
     var spf = new SPF();
+    var auth_result;
 
     if (connection.notes.spf_helo) {
         var h_result = connection.notes.spf_helo;
-        var h_host = connection.hello_host;
+        var h_host = connection.hello.host;
         plugin.save_to_header(connection, spf, h_result, mfrom, h_host, 'helo');
         if (!host) {   // Use results from HELO if the return-path is null
-            var auth_result = spf.result(h_result).toLowerCase();
+            auth_result = spf.result(h_result).toLowerCase();
             connection.auth_results( "spf="+auth_result+" smtp.helo=" + h_host);
 
             var sender = '<> via ' + h_host;
@@ -146,17 +151,19 @@ exports.hook_mail = function (next, connection, params) {
         return next();
     }, (plugin.timeout-1) * 1000);
 
-    spf.helo = connection.hello_host;
+    spf.helo = connection.hello.host;
 
-    var ch_cb = function (err, result) {
+    var ch_cb = function (err, result, ip) {
         if (timer) clearTimeout(timer);
         if (timeout) return;
         if (err) {
             connection.logerror(plugin, err);
             return next();
         }
-        plugin.log_result(connection, 'mfrom', host, mfrom, spf.result(result));
-        plugin.save_to_header(connection, spf, result, mfrom, host, 'mailfrom');
+        plugin.log_result(connection, 'mfrom', host, mfrom,
+                          spf.result(result), (ip ? ip : connection.remote.ip));
+        plugin.save_to_header(connection, spf, result, mfrom, host,
+                              'mailfrom', (ip ? ip : connection.remote.ip));
 
         auth_result = spf.result(result).toLowerCase();
         connection.auth_results( "spf="+auth_result+" smtp.mailfrom="+host);
@@ -169,36 +176,54 @@ exports.hook_mail = function (next, connection, params) {
             domain: host,
             emit: true,
         });
-        return plugin.return_results(next, connection, spf, 'mfrom', result,
-            '<'+mfrom+'>');
+        plugin.return_results(next, connection, spf, 'mfrom', result, '<'+mfrom+'>');
     };
 
     // typical inbound (!relay)
     if (!connection.relaying) {
-        return spf.check_host(connection.remote_ip, host, mfrom, ch_cb);
+        return spf.check_host(connection.remote.ip, host, mfrom, ch_cb);
     }
 
     // outbound (relaying), context=sender
     if (plugin.cfg.relay.context === 'sender') {
-        return spf.check_host(connection.remote_ip, host, mfrom, ch_cb);
+        return spf.check_host(connection.remote.ip, host, mfrom, ch_cb);
     }
 
     // outbound (relaying), context=myself
     net_utils.get_public_ip(function(e, my_public_ip) {
-        if (e) {
-            return ch_cb(e);
-        }
-        if (!my_public_ip) {
-            return ch_cb(new Error("failed to discover public IP"));
-        }
-        return spf.check_host(my_public_ip, host, mfrom, ch_cb);
+        // We always check the client IP first, because a relay
+        // could be sending inbound mail from a non-local domain
+        // which could case an incorrect SPF Fail result if we
+        // check the public IP first, so we only check the public
+        // IP if the client IP returns a result other than 'Pass'.
+        spf.check_host(connection.remote.ip, host, mfrom, function (err, result) {
+            var spf_result;
+            if (result) {
+                spf_result = spf.result(result).toLowerCase();
+            }
+            if (err || (spf_result && spf_result !== 'pass')) {
+                if (e) {
+                    // Error looking up public IP
+                    return ch_cb(e);
+                }
+                if (!my_public_ip) {
+                    return ch_cb(new Error("failed to discover public IP"));
+                }
+                spf = new SPF();
+                spf.check_host(my_public_ip, host, mfrom, function (er, r) {
+                    ch_cb(er, r, my_public_ip);
+                });
+                return;
+            }
+            ch_cb(err, result, connection.remote.ip);
+        });
     });
 };
 
-exports.log_result = function (connection, scope, host, mfrom, result) {
+exports.log_result = function (connection, scope, host, mfrom, result, ip) {
     connection.loginfo(this, [
         'identity=' + scope,
-        'ip=' + connection.remote_ip,
+        'ip=' + (ip ? ip : connection.remote.ip),
         'domain="' + host + '"',
         'mfrom=<' + mfrom + '>',
         'result=' + result
@@ -243,7 +268,7 @@ exports.return_results = function(next, connection, spf, scope, result, sender) 
     }
 };
 
-exports.save_to_header = function (connection, spf, result, mfrom, host, id) {
+exports.save_to_header = function (connection, spf, result, mfrom, host, id, ip) {
     var plugin = this;
     // Add a trace header
     if (!connection) return;
@@ -252,11 +277,11 @@ exports.save_to_header = function (connection, spf, result, mfrom, host, id) {
         spf.result(result) +
         ' (' + plugin.config.get('me') + ': domain of ' + host +
         ((result === spf.SPF_PASS) ? ' designates ' : ' does not designate ') +
-        connection.remote_ip + ' as permitted sender) ' + [
+        connection.remote.ip + ' as permitted sender) ' + [
             'receiver=' + plugin.config.get('me'),
             'identity=' + id,
-            'client-ip=' + connection.remote_ip,
-            'helo=' + connection.hello_host,
+            'client-ip=' + (ip ? ip : connection.remote.ip),
+            'helo=' + connection.hello.host,
             'envelope-from=<' + mfrom + '>'
         ].join('; ')
     );

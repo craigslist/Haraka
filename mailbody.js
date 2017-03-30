@@ -3,7 +3,7 @@
 // Mail Body Parser
 var logger = require('./logger');
 var Header = require('./mailheader').Header;
-var utils  = require('./utils');
+var utils  = require('haraka-utils');
 var config = require('./config');
 var events = require('events');
 var util   = require('util');
@@ -265,7 +265,7 @@ Body.prototype.parse_end = function (line) {
     this.body_encoding = enc;
 
     // ignore these lines - but we could store somewhere I guess.
-    if (!this.body_text_encoded.length) return this._empty_filter(ct, enc); // nothing to decode
+    if (!this.body_text_encoded.length) return this._empty_filter(ct, enc) + line; // nothing to decode
     if (this.bodytext.length !== 0) return line;     // already decoded?
 
     var buf = this.decode_function(this.body_text_encoded);
@@ -282,7 +282,7 @@ Body.prototype.parse_end = function (line) {
 
         // convert back to base_64 or QP if required:
         if (this.decode_function === this.decode_qp) {
-            line = utils.encode_qp(new_buf.toString("binary")) + "\n" + line;
+            line = utils.encode_qp(new_buf) + "\n" + line;
         }
         else if (this.decode_function === this.decode_base64) {
             line = new_buf.toString("base64").replace(/(.{1,76})/g, "$1\n") + line;
@@ -300,7 +300,7 @@ Body.prototype.parse_end = function (line) {
     return line;
 };
 
-Body.prototype.try_iconv = function(buf, enc) {
+Body.prototype.try_iconv = function (buf, enc) {
 
     if (!Iconv) {
         this.body_encoding = 'no_iconv';
@@ -314,7 +314,7 @@ Body.prototype.try_iconv = function(buf, enc) {
     }
 
     try {
-        var converter = new Iconv(enc, "UTF-8");
+        let converter = new Iconv(enc, "UTF-8");
         this.bodytext = converter.convert(buf).toString();
     }
     catch (err) {
@@ -324,7 +324,7 @@ Body.prototype.try_iconv = function(buf, enc) {
         if (err.code !== 'EINVAL') {
             // Perform the conversion again, but ignore any errors
             try {
-                var converter = new Iconv(enc, 'UTF-8//TRANSLIT//IGNORE');
+                let converter = new Iconv(enc, 'UTF-8//TRANSLIT//IGNORE');
                 this.bodytext = converter.convert(buf).toString();
             }
             catch (e) {
@@ -407,7 +407,7 @@ Body.prototype.parse_attachment = function (line) {
 Body.prototype.decode_qp = utils.decode_qp;
 
 Body.prototype.decode_base64 = function (line) {
-    return new Buffer(line, "base64");
+    return new Buffer(line, 'base64');
 };
 
 Body.prototype.decode_8bit = function (line) {

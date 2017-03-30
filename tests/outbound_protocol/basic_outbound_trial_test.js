@@ -1,4 +1,5 @@
 'use strict';
+/*eslint no-unused-vars: ["error", { "varsIgnorePattern": "queue_dir", "args": "none" }]*/
 
 // This test file is executed by tests/outbound_protocol.js (see there)
 //
@@ -42,7 +43,7 @@ HMailItem.prototype.bounce = function (err, opts) {
     test.done();
 }
 
-function runBasicSmtpConversation(hmail) {
+function runBasicSmtpConversation (hmail) {
     if (!hmail.todo) {
         hmail.once('ready', function () {
             _runBasicSmtpConversation(hmail);
@@ -52,7 +53,7 @@ function runBasicSmtpConversation(hmail) {
         _runBasicSmtpConversation(hmail);
     }
 }
-function _runBasicSmtpConversation(hmail) {
+function _runBasicSmtpConversation (hmail) {
     var mock_socket = mock_sock.connect('testhost', 'testport');
     mock_socket.writable = true;
 
@@ -64,17 +65,17 @@ function _runBasicSmtpConversation(hmail) {
         // Haraka connects, we say first
         { 'from': 'remote', 'line': '220 testing-smtp' },
 
-        { 'from': 'haraka', 'test': function(line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO', },
+        { 'from': 'haraka', 'test': function (line) { return line.match(/^EHLO /); }, 'description': 'Haraka should say EHLO' },
         { 'from': 'remote', 'line': '220-testing-smtp' },
         { 'from': 'remote', 'line': '220 8BITMIME' },
 
         { 'from': 'haraka', 'test': 'MAIL FROM:<sender@domain>' },
         { 'from': 'remote', 'line': '500 5.0.0 Absolutely not acceptable. Basic Test Only.' },
 
-        { 'from': 'haraka', 'test': 'QUIT', end_test: true }, // this will trigger calling the callback
+        { 'from': 'haraka', 'test': 'RSET', end_test: true }, // this will trigger calling the callback
     ];
 
-    util_hmailitem.playTestSmtpConversation(hmail, mock_socket, test, testPlaybook, function() {
+    util_hmailitem.playTestSmtpConversation(hmail, mock_socket, test, testPlaybook, function () {
         // test done covered in stubbed HMailItem.bounce
     });
 

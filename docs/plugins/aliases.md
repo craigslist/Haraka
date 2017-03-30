@@ -7,6 +7,9 @@ a JSON formatted configuration file, and must have at very least an action.
 Any syntax error found in the JSON format config file will stop the server
 from running.
 
+IMPORTANT: this plugin must appear in `config/plugins` before other plugins
+that run on hook_rcpt
+
 WARNING: DO NOT USE THIS PLUGIN WITH queue/smtp\_proxy.
 
 Configuration
@@ -21,8 +24,8 @@ Configuration
         { "test1" : { "action" : "drop" } } 
 
     In the above example the "test1" alias will drop any message that matches
-    test1, or test1-* (wildcard '-', see below).  Actions may in turn have 0 or
-    more options listed with them like so:
+    test1, or test1-* or test1+* (wildcard '-' or '+', see below).  Actions
+    may in turn have 0 or more options listed with them like so:
 
         { "test3" : { "action" : "alias", "to" : "test3-works" } }
 
@@ -38,12 +41,20 @@ Configuration
         or
         { "demo@example.com" : { "action" : "drop" } } 
 
-    * wildcard '-' notation
+    Aliases may also be exploded to multiple recipients:
+
+        { "sales@example.com": { "action: "alias", "to": ["alice@example.com", "bob@example.com"] } }
+
+    * wildcard notation
 
         In an effort to match some of the functionality of other alias parsers
         we've allowed wildcard matching of the alias against the right most
-        string of a RCPT address.  That is, if our address were
-        test2-testing@example.com, the below alias would match:
+        string of a RCPT address.  The characters '-' and '+' are commonly used
+        for subaddressing and this plugin has built-in support to alias the
+        "user" part of the email address.
+
+        That is, if our address were test2-testing@example.com (or
+        test2+testing@example.com), the below alias would match:
 
             { "test2" : { "action" : "drop" } }
 

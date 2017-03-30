@@ -11,9 +11,8 @@ var constants   = require('haraka-constants');
 
 // local modules
 var logger      = require('./logger');
-var config      = require('./config');
-var utils       = require('./utils');
 var states      = require('./connection').states;
+exports.config  = require('./config');
 
 exports.registered_hooks = {};
 exports.registered_plugins = {};
@@ -30,9 +29,33 @@ function Plugin (name) {
     this.hooks = {};
 }
 
-Plugin.prototype.core_require = function (name) {
+exports.shutdown_plugins = function () {
+    for (var i in exports.registered_plugins) {
+        if (exports.registered_plugins[i].shutdown) {
+            exports.registered_plugins[i].shutdown();
+        }
+    }
+}
+
+process.on('message', function (msg) {
+    if (msg.event && msg.event == 'plugins.shutdown') {
+        logger.loginfo("[plugins] Shutting down plugins");
+        exports.shutdown_plugins();
+    }
+});
+
+Plugin.prototype.haraka_require = function (name) {
     return require('./' + name);
 };
+
+Plugin.prototype.core_require = Plugin.prototype.haraka_require;
+
+function plugin_search_paths (prefix, name) {
+    return [
+        path.resolve(prefix, 'plugins', name + '.js'),
+        path.resolve(prefix, 'node_modules', 'haraka-plugin-' + name, 'package.json'),
+    ];
+}
 
 Plugin.prototype._get_plugin_path = function () {
     var plugin = this;
@@ -55,29 +78,31 @@ Plugin.prototype._get_plugin_path = function () {
 
     plugin.hasPackageJson = false;
     var name = plugin.name;
+    if (/^haraka\-plugin\-/.test(name)) {
+        logger.lognotice("the haraka-plugin- prefix is not required in config/plugins");
+        name = name.replace(/^haraka\-plugin\-/, '');
+    }
 
     var paths = [];
     if (process.env.HARAKA) {
         // Installed mode - started via bin/haraka
+        paths = paths.concat(plugin_search_paths(process.env.HARAKA, name));
+
+        // permit local "folder" plugins (/$name/package.json) (see #1649)
         paths.push(
-            path.resolve(process.env.HARAKA, 'plugins', name + '.js'),
             path.resolve(process.env.HARAKA, 'plugins', name, 'package.json'),
             path.resolve(process.env.HARAKA, 'node_modules', name, 'package.json')
         );
     }
 
-    paths.push(
-        path.resolve(__dirname, 'plugins', name + '.js'),
-        path.resolve(__dirname, 'plugins', name, 'package.json'),
-        path.resolve(__dirname, 'node_modules', name, 'package.json')
-    );
-
+    // development mode
+    paths = paths.concat(plugin_search_paths(__dirname, name));
     paths.forEach(function (pp) {
         if (plugin.plugin_path) return;
         try {
             fs.statSync(pp);
             plugin.plugin_path = pp;
-            if (/\/package\.json$/.test(pp)) {
+            if (path.basename(pp) === 'package.json') {
                 plugin.hasPackageJson = true;
             }
         }
@@ -89,7 +114,7 @@ Plugin.prototype._get_config = function () {
     if (this.hasPackageJson) {
         // It's a package/folder plugin - look in plugin folder for defaults,
         // haraka/config folder for overrides
-        return config.module_config(
+        return exports.config.module_config(
             path.dirname(this.plugin_path),
             process.env.HARAKA || __dirname
         );
@@ -97,11 +122,14 @@ Plugin.prototype._get_config = function () {
     if (process.env.HARAKA) {
         // Plain .js file, installed mode - look in core folder for defaults,
         // install dir for overrides
-        return config.module_config(__dirname, process.env.HARAKA);
+        return exports.config.module_config(__dirname, process.env.HARAKA);
+    }
+    if (process.env.HARAKA_TEST_DIR) {
+        return exports.config.module_config(process.env.HARAKA_TEST_DIR);
     }
 
     // Plain .js file, git mode - just look in this folder
-    return config.module_config(__dirname);
+    return exports.config.module_config(__dirname);
 };
 
 Plugin.prototype.register_hook = function (hook_name, method_name, priority) {
@@ -136,6 +164,11 @@ Plugin.prototype.inherits = function (parent_name) {
         if (!this[method]) {
             this[method] = parent_plugin[method];
         }
+        // else if (method == 'shutdown') { // Method is in this module, so it exists in the plugin
+        //     if (!this.hasOwnProperty('shutdown')) {
+        //         this[method] = parent_plugin[method];
+        //     }
+        // }
     }
     if (parent_plugin.register) {
         parent_plugin.register.call(this);
@@ -161,30 +194,36 @@ Plugin.prototype._make_custom_require = function () {
             return require(module);
         }
 
-        if (utils.existsSync(__dirname + '/' + module + '.js') ||
-            utils.existsSync(__dirname + '/' + module)) {
+        if (fs.existsSync(path.join(__dirname, module + '.js')) ||
+            fs.existsSync(path.join(__dirname, module))) {
             return require(module);
         }
 
-        return require(path.dirname(plugin.plugin_path) + '/' + module);
+        return require(path.join(path.dirname(plugin.plugin_path), module));
     };
 };
 
 Plugin.prototype._get_code = function (pp) {
     var plugin = this;
+
     if (plugin.hasPackageJson) {
-        return 'exports = require("' + path.dirname(pp) + '");';
+        var packageDir = path.dirname(pp);
+        if (/^win(32|64)/.test(process.platform)) {
+            // escape the c:\path\back\slashes else they disappear
+            packageDir = packageDir.replace(/\\/g, '\\\\');
+        }
+        return 'var _p = require("' + packageDir + '"); for (var k in _p) { exports[k] = _p[k] }';
     }
 
     try {
         return '"use strict";' + fs.readFileSync(pp);
     }
     catch (err) {
-        if (config.get('smtp.ini').main.ignore_bad_plugins) {
-            logger.logcrit('Loading plugin ' + name + ' failed: ' + err);
+        if (exports.config.get('smtp.ini').main.ignore_bad_plugins) {
+            logger.logcrit('Loading plugin ' + plugin.name + ' failed: ' + err);
             return;
         }
-        throw 'Loading plugin ' + name + ' failed: ' + err;
+        throw 'Loading plugin ' + plugin.name + ' failed: ' + err;
     }
 }
 
@@ -208,6 +247,7 @@ Plugin.prototype._compile = function () {
         Buffer: Buffer,
         Math: Math,
         server: plugins.server,
+        setImmediate: setImmediate
     };
     if (plugin.hasPackageJson) {
         delete sandbox.__filename;
@@ -218,7 +258,7 @@ Plugin.prototype._compile = function () {
     }
     catch (err) {
         logger.logcrit('Compiling plugin: ' + plugin.name + ' failed');
-        if (config.get('smtp.ini').main.ignore_bad_plugins) {
+        if (exports.config.get('smtp.ini').main.ignore_bad_plugins) {
             logger.logcrit('Loading plugin ' + plugin.name + ' failed: ',
                 err.message + ' - will skip this plugin and continue');
             return;
@@ -230,10 +270,10 @@ Plugin.prototype._compile = function () {
 };
 
 function get_timeout (name) {
-    var timeout = parseFloat((config.get(name + '.timeout')));
+    var timeout = parseFloat((exports.config.get(name + '.timeout')));
     if (isNaN(timeout)) {
         logger.logdebug('no timeout in ' + name + '.timeout');
-        timeout = parseFloat(config.get('plugin_timeout'));
+        timeout = parseFloat(exports.config.get('plugin_timeout'));
     }
     if (isNaN(timeout)) {
         logger.logdebug('no timeout in plugin_timeout');
@@ -271,7 +311,7 @@ plugins.load_plugins = function (override) {
         plugin_list = override;
     }
     else {
-        plugin_list = config.get('plugins', 'list');
+        plugin_list = exports.config.get('plugins', 'list');
     }
 
     plugin_list.forEach(function (plugin) {
@@ -319,7 +359,7 @@ plugins._load_and_compile_plugin = function (name) {
     if (!plugin.plugin_path) {
         var err = 'Loading plugin ' + plugin.name +
             ' failed: No plugin with this name found';
-        if (config.get('smtp.ini').main.ignore_bad_plugins) {
+        if (exports.config.get('smtp.ini').main.ignore_bad_plugins) {
             logger.logcrit(err);
             return;
         }
@@ -528,13 +568,13 @@ function get_denyfn (object, hook, params, retval, msg, respond_method) {
                     plugins.run_next_hook(hook, object, params);
                 }
                 else {
-                    object[respond_method](constants.cont, deny_msg);
+                    object[respond_method](constants.cont, deny_msg, params);
                 }
                 break;
             default:
                 object.saved_hooks_to_run = [];
                 object.hooks_to_run = [];
-                object[respond_method](retval, msg);
+                object[respond_method](retval, msg, params);
         }
     };
 }

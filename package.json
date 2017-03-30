@@ -4,7 +4,7 @@
   "license": "MIT",
   "description": "An SMTP Server project.",
   "keywords": [ "haraka", "smtp", "server", "email" ],
-  "version": "2.7.3",
+  "version": "2.8.13",
   "homepage": "http://haraka.github.io",
   "repository": {
     "type": "git",
@@ -12,47 +12,57 @@
   },
   "main": "haraka.js",
   "engines": {
-    "node": ">= v0.10.43"
+    "node": ">= v4.6.2"
   },
   "dependencies": {
     "address-rfc2821"       : "*",
     "address-rfc2822"       : "*",
-    "async"                 : "~1.5.2",
+    "async"                 : "~2.1.2",
     "daemon"                : "~1.1.0",
-    "generic-pool"          : "~2.3.1",
-    "iconv"                 : "~2.1.11",
-    "ipaddr.js"             : "~1.0.3",
-    "js-yaml"               : "~3.5.2",
-    "nopt"                  : "~3.0.4",
+    "generic-pool"          : "~2.5.0",
+    "iconv"                 : "~2.2.0",
+    "ipaddr.js"             : "~1.2.0",
+    "js-yaml"               : "~3.7.0",
+    "nopt"                  : "~4.0.1",
     "npid"                  : "~0.4.0",
-    "semver"                : "~5.0.3",
+    "semver"                : "~5.3.0",
     "sprintf-js"            : "~1.0.3",
     "haraka-tld"            : "*",
-    "haraka-constants"      : "*"
+    "haraka-constants"      : "*",
+    "haraka-net-utils"      : ">=1.0.4",
+    "haraka-results"        : "^1.0.1",
+    "haraka-utils"          : "*",
+    "haraka-plugin-asn"     : "*",
+    "haraka-plugin-geoip"   : "*",
+    "haraka-plugin-karma"   : "*",
+    "haraka-plugin-limit"   : "*",
+    "haraka-plugin-watch"   : "*"
   },
   "optionalDependencies": {
     "elasticsearch"         : "*",
-    "haraka-nosql"          : "*",
-    "ldapjs"                : "~0.7.1",
-    "maxmind"               : "*",
-    "modern-syslog"         : "~1.1.1",
-    "redis"                 : "~2.4.2",
+    "ldapjs"                : "~1.0.0",
+    "haraka-plugin-redis"   : "*",
+    "haraka-plugin-syslog"  : "*",
+    "ocsp"                  : "~1.1.0",
+    "redis"                 : "~2.6.2",
     "tmp"                   : "~0.0.28",
     "vs-stun"               : "~0.0.7"
   },
   "devDependencies": {
-    "nodeunit"              : "https://github.com/godsflaw/nodeunit/archive/master.tar.gz",
-    "haraka-test-fixtures"  : "*",
-    "eslint"                : ">=2.0.0",
-    "grunt"                 : "*",
-    "grunt-contrib-clean"   : "*",
-    "grunt-contrib-jshint"  : "*",
-    "grunt-version-check"   : "*",
-    "grunt-eslint"          : "*"
+    "nodeunit"              : "*",
+    "haraka-test-fixtures"  : ">=1.0.17",
+    "eslint"                : ">=2",
+    "eslint-plugin-haraka"  : "*",
+    "nodemailer"            : "^2.7.2"
   },
   "bugs": {
     "mail": "helpme@gmail.com",
     "url": "https://github.com/haraka/Haraka/issues"
+  },
+  "greenkeeper": {
+    "ignore": [
+      "generic-pool"
+    ]
   },
   "bin": {
     "haraka": "./bin/haraka",
@@ -61,6 +71,9 @@
     "haraka_grep": "./bin/haraka_grep"
   },
   "scripts": {
-    "test": "node run_tests"
+    "test": "node run_tests",
+    "lint": "./node_modules/.bin/eslint *.js plugins/**/*.js bin/haraka bin/spf bin/dkimverify tests/**/*.js",
+    "lintfix": "./node_modules/.bin/eslint --fix *.js plugins/**/*.js bin/haraka bin/spf bin/dkimverify tests/**/*.js",
+    "cover": "NODE_ENV=cov ./node_modules/.bin/istanbul cov run_tests"
   }
 }

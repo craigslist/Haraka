@@ -1,7 +1,7 @@
 // bounce tests
 var tlds = require('haraka-tld');
 
-var net_utils = require('./net_utils');
+var net_utils = require('haraka-net-utils');
 var SPF = require('./spf').SPF;
 
 // Override logging in SPF module
@@ -110,7 +110,7 @@ exports.single_recipient = function(next, connection) {
                 {skip: 'single_recipient(relay)', emit: true });
         return next();
     }
-    if (net_utils.is_private_ip(connection.remote_ip)) {
+    if (connection.remote.is_private) {
         transaction.results.add(plugin,
                 {skip: 'single_recipient(private_ip)', emit: true });
         return next();
@@ -200,7 +200,7 @@ exports.has_null_sender = function (connection, mail_from) {
     return false;
 };
 
-var message_id_re = /^Message-ID:\s*(<[^>]+>)/mig;
+var message_id_re = /^Message-ID:\s*(<?[^>]+>?)/mig;
 
 function find_message_id_headers (headers, body, connection, self) {
     if (!body) return;
@@ -251,9 +251,9 @@ exports.non_local_msgid = function (next, connection) {
 
     var domains=[];
     for (var i=0; i < matches.length; i++) {
-        var res = matches[i].match(/@(.*)>/i);
-        if (!res[0]) continue;
-        domains.push(res[0].substring(1, (res[0].length-1)));
+        var res = matches[i].match(/@([^>]*)>?/i);
+        if (!res) continue;
+        domains.push(res[1]);
     }
 
     if (domains.length === 0) {
@@ -280,6 +280,13 @@ exports.non_local_msgid = function (next, connection) {
                 "I didn't send it.");
     }
 
+    return next();
+
+    /* The code below needs some kind of test to say the domain isn't local.
+        this would be hard to do without knowing how you have Haraka configured.
+        e.g. it could be config/host_list, or it could be some other way.
+        - hence I added the return next() above or this test can never be correct.
+    */
     // we wouldn't have accepted the bounce if the recipient wasn't local
     transaction.results.add(plugin,
             {fail: 'Message-ID not local', emit: true });

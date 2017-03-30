@@ -3,6 +3,10 @@
 'use strict';
 var path = require('path');
 
+if (!process.env.HARAKA) {
+    console.warn("WARNING: Not running installed Haraka - command line arguments ignored")
+}
+
 // this must be set before "server.js" is loaded
 process.env.HARAKA = process.env.HARAKA || path.resolve('.');
 try {
@@ -37,11 +41,21 @@ process.on('uncaughtException', function (err) {
     logger.dump_and_exit(1);
 });
 
+var shutting_down = false;
 ['SIGTERM', 'SIGINT'].forEach(function (sig) {
     process.on(sig, function () {
+        if (shutting_down) return process.exit(1);
+        shutting_down = true;
         process.title = path.basename(process.argv[1], '.js');
         logger.lognotice(sig + ' received');
-        logger.dump_and_exit(1);
+        logger.dump_and_exit(function () {
+            if (server.cluster && server.cluster.isMaster) {
+                server.gracefulShutdown();
+            }
+            else if (!server.cluster) {
+                server.gracefulShutdown();
+            }
+        });
     });
 });
 
@@ -50,7 +64,8 @@ process.on('SIGHUP', function () {
     server.flushQueue();
 });
 
-process.on('exit', function(code) {
+process.on('exit', function (code) {
+    if (shutting_down) return;
     process.title = path.basename(process.argv[1], '.js');
     logger.lognotice('Shutting down');
     logger.dump_logs();

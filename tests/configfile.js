@@ -109,8 +109,10 @@ exports.load_ini_config = {
     'test.ini, sect1, opts, w/defaults' : function (test) {
         test.expect(6);
         var r = this.cfreader.load_ini_config('tests/config/test.ini', {
-            booleans: ['+sect1.bool_true','-sect1.bool_false',
-                       '+sect1.bool_true_default', 'sect1.-bool_false_default']
+            booleans: [
+                '+sect1.bool_true','-sect1.bool_false',
+                '+sect1.bool_true_default', 'sect1.-bool_false_default'
+            ]
         });
         test.strictEqual(r.sect1.bool_true, true);
         test.strictEqual(r.sect1.bool_false, false);
@@ -153,44 +155,6 @@ exports.load_ini_config = {
     },
 };
 
-exports.get_filetype_reader  = {
-    setUp: _set_up,
-    'binary': function (test) {
-        test.expect(2);
-        var reader = this.cfreader.get_filetype_reader('binary');
-        test.equal(typeof reader.load, 'function');
-        test.equal(typeof reader.empty, 'function');
-        test.done();
-    },
-    'flat': function (test) {
-        test.expect(2);
-        var reader = this.cfreader.get_filetype_reader('flat');
-        test.equal(typeof reader.load, 'function');
-        test.equal(typeof reader.empty, 'function');
-        test.done();
-    },
-    'json': function (test) {
-        test.expect(2);
-        var reader = this.cfreader.get_filetype_reader('json');
-        test.equal(typeof reader.load, 'function');
-        test.equal(typeof reader.empty, 'function');
-        test.done();
-    },
-    'ini': function (test) {
-        test.expect(2);
-        var reader = this.cfreader.get_filetype_reader('ini');
-        test.equal(typeof reader.load, 'function');
-        test.equal(typeof reader.empty, 'function');
-        test.done();
-    },
-    'yaml': function (test) {
-        test.expect(2);
-        var r = this.cfreader.load_ini_config('tests/config/test.ini');
-        test.deepEqual(['first_host', 'second_host', 'third_host'], r.array_test.hostlist);
-        test.deepEqual([123, 456, 789], r.array_test.intlist);
-        test.done();
-    },
-};
 
 exports.non_existing = {
     setUp: _set_up,

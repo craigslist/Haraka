@@ -2,11 +2,8 @@
 // smtp network server
 
 var net         = require('./tls_socket');
-var logger      = require('./logger');
-var config      = require('./config');
 var conn        = require('./connection');
-var out         = require('./outbound');
-var plugins     = require('./plugins');
+var outbound    = require('./outbound');
 var constants   = require('haraka-constants');
 var os          = require('os');
 var cluster     = require('cluster');
@@ -14,13 +11,20 @@ var async       = require('async');
 var daemon      = require('daemon');
 var path        = require('path');
 
-// Need these here so we can run hooks
-logger.add_log_methods(exports, 'server');
+var Server      = exports;
+Server.logger   = require('./logger');
+Server.config   = require('./config');
+Server.plugins  = require('./plugins');
 
-var Server = exports;
+var logger      = Server.logger;
+
+// Need these here so we can run hooks
+logger.add_log_methods(Server, 'server');
+
+Server.listeners = [];
 
 Server.load_smtp_ini = function () {
-    Server.cfg = config.get('smtp.ini', {
+    Server.cfg = Server.config.get('smtp.ini', {
         booleans: [
             '-main.daemonize',
         ],
@@ -31,7 +35,8 @@ Server.load_smtp_ini = function () {
     var defaults = {
         inactivity_timeout: 600,
         daemon_log_file: '/var/log/haraka.log',
-        daemon_pid_file: '/var/run/haraka.pid'
+        daemon_pid_file: '/var/run/haraka.pid',
+        force_shutdown_timeout: 30,
     };
 
     for (var key in defaults) {
@@ -42,7 +47,7 @@ Server.load_smtp_ini = function () {
 
 Server.load_http_ini = function () {
     Server.http = {};
-    Server.http.cfg = config.get('http.ini', function () {
+    Server.http.cfg = Server.config.get('http.ini', function () {
         Server.load_http_ini();
     }).main;
 };
@@ -75,16 +80,152 @@ Server.daemonize = function () {
     }
 };
 
-Server.flushQueue = function () {
+Server.flushQueue = function (domain) {
     if (!Server.cluster) {
-        out.flush_queue();
+        outbound.flush_queue(domain);
         return;
     }
 
     for (var id in cluster.workers) {
-        cluster.workers[id].send({event: 'outbound.flush_queue'});
+        cluster.workers[id].send({event: 'outbound.flush_queue', domain: domain});
     }
 };
+
+var gracefull_in_progress = false;
+
+Server.gracefulRestart = function () {
+    Server._graceful();
+}
+
+Server.gracefulShutdown = function () {
+    logger.loginfo('Shutting down listeners');
+    Server.listeners.forEach(function (server) {
+        server.close();
+    });
+    Server._graceful(function () {
+        logger.loginfo("Failed to shutdown naturally. Exiting.");
+        process.exit(0);
+    });
+}
+
+Server._graceful = function (shutdown) {
+    if (!Server.cluster) {
+        if (shutdown) {
+            ['outbound', 'cfreader', 'plugins'].forEach(function (module) {
+                process.emit('message', {event: module + '.shutdown'});
+            });
+            var t = setTimeout(shutdown, Server.cfg.main.force_shutdown_timeout * 1000);
+            return t.unref();
+        }
+    }
+
+    if (gracefull_in_progress) {
+        logger.lognotice("Restart currently in progress - ignoring request");
+        return;
+    }
+
+    gracefull_in_progress = true;
+    // TODO: Make these configurable
+    var disconnect_timeout = 30;
+    var exit_timeout = 30;
+    cluster.removeAllListeners('exit');
+    // only reload one worker at a time
+    // otherwise, we'll have a time when no connection handlers are running
+    var worker_ids = Object.keys(cluster.workers);
+    async.eachSeries(worker_ids, function (id, cb) {
+        logger.lognotice("Killing node: " + id);
+        var worker = cluster.workers[id];
+        ['outbound', 'cfreader', 'plugins'].forEach(function (module) {
+            worker.send({event: module + '.shutdown'});
+        })
+        worker.disconnect();
+        var disconnect_received = false;
+        var disconnect_timer = setTimeout(function () {
+            if (!disconnect_received) {
+                logger.logcrit("Disconnect never received by worker. Killing.");
+                worker.kill();
+            }
+        }, disconnect_timeout * 1000);
+        worker.once("disconnect", function () {
+            clearTimeout(disconnect_timer);
+            disconnect_received = true;
+            logger.lognotice("Disconnect complete");
+            var dead = false;
+            var timer = setTimeout(function () {
+                if (!dead) {
+                    logger.logcrit("Worker " + id + " failed to shutdown. Killing.");
+                    worker.kill();
+                }
+            }, exit_timeout * 1000);
+            worker.once("exit", function () {
+                dead = true;
+                clearTimeout(timer);
+                if (shutdown) cb();
+            });
+        });
+        if (shutdown) return;
+        var newWorker = cluster.fork();
+        newWorker.once("listening", function () {
+            logger.lognotice("Replacement worker online.");
+            newWorker.on('exit', function (code, signal) {
+                cluster_exit_listener(newWorker, code, signal);
+            });
+            cb();
+        });
+    }, function (err) {
+        // err can basically never happen, but fuckit...
+        if (err) logger.logerror(err);
+        if (shutdown) {
+            logger.loginfo("Workers closed. Shutting down master process subsystems");
+            ['outbound', 'cfreader', 'plugins'].forEach(function (module) {
+                process.emit('message', {event: module + '.shutdown'});
+            })
+            var t2 = setTimeout(shutdown, Server.cfg.main.force_shutdown_timeout * 1000);
+            return t2.unref();
+        }
+        gracefull_in_progress = false;
+        logger.lognotice("Reload complete, workers: " + JSON.stringify(Object.keys(cluster.workers)));
+    });
+}
+
+Server.drainPools = function () {
+    if (!Server.cluster) {
+        return outbound.drain_pools();
+    }
+
+    for (var id in cluster.workers) {
+        cluster.workers[id].send({event: 'outbound.drain_pools'});
+    }
+};
+
+Server.sendToMaster = function (command, params) {
+    // console.log("Send to master: ", command);
+    if (Server.cluster) {
+        if (Server.cluster.isMaster) {
+            Server.receiveAsMaster(command, params);
+        }
+        else {
+            process.send({cmd: command, params: params});
+        }
+    }
+    else {
+        Server.receiveAsMaster(command, params);
+    }
+}
+
+Server.receiveAsMaster = function (command, params) {
+    if (!Server[command]) {
+        logger.logerror("Invalid command: " + command);
+    }
+    Server[command].apply(Server, params);
+}
+
+function messageHandler (worker, msg) {
+    // console.log("received cmd: ", msg);
+    if (msg && msg.cmd) {
+        Server.receiveAsMaster(msg.cmd, msg.params);
+    }
+}
 
 Server.get_listen_addrs = function (cfg, port) {
     if (!port) port = 25;
@@ -121,14 +262,14 @@ Server.createServer = function (params) {
     }
 
     Server.notes = {};
-    plugins.server = Server;
-    plugins.load_plugins();
+    Server.plugins.server = Server;
+    Server.plugins.load_plugins();
 
     var inactivity_timeout = (c.inactivity_timeout || 300) * 1000;
 
     if (!cluster || !c.nodes) {
         Server.daemonize(c);
-        Server.setup_smtp_listeners(plugins, 'master', inactivity_timeout);
+        Server.setup_smtp_listeners(Server.plugins, 'master', inactivity_timeout);
         return;
     }
 
@@ -137,44 +278,67 @@ Server.createServer = function (params) {
 
     // Cluster Workers
     if (!cluster.isMaster) {
-        Server.setup_smtp_listeners(plugins, 'child', inactivity_timeout);
+        Server.setup_smtp_listeners(Server.plugins, 'child', inactivity_timeout);
         return;
+    }
+    else {
+        // console.log("Setting up message handler");
+        cluster.on('message', messageHandler);
     }
 
     // Cluster Master
     // We fork workers in init_master_respond so that plugins
     // can put handlers on cluster events before they are emitted.
-    plugins.run_hooks('init_master', Server);
+    Server.plugins.run_hooks('init_master', Server);
 };
 
 Server.get_smtp_server = function (host, port, inactivity_timeout) {
     var server;
     var conn_cb = function (client) {
         client.setTimeout(inactivity_timeout);
-        conn.createConnection(client, server);
+        var connection = conn.createConnection(client, server);
+        if (server.has_tls) {
+            var cipher = client.getCipher();
+            var authorized = client.authorized;
+            var authorizationError = client.authorizationError;
+            var cert = client.getPeerCertificate();
+
+            connection.set('hello', 'host', undefined);
+            connection.set('tls', 'enabled', true);
+            connection.set('tls', 'cipher', cipher);
+            connection.notes.tls = {
+                authorized: authorized,
+                authorizationError: authorizationError,
+                peerCertificate: cert,
+                cipher: cipher
+            };
+        }
     };
 
     if (port !== '465') {
         server = net.createServer(conn_cb);
+        Server.listeners.push(server);
         return server;
     }
 
-    var options = {
-        key: config.get('tls_key.pem', 'binary'),
-        cert: config.get('tls_cert.pem', 'binary'),
-    };
-    if (!options.key) {
-        logger.logerror("Missing tls_key.pem for port 465");
+    if (!Server.plugins.registered_plugins.tls) {
+        logger.logerror("TLS plugin not activated. Cannot listen on port 465 (SMTPS) without config");
         return;
     }
-    if (!options.cert) {
-        logger.logerror("Missing tls_cert.pem for port 465");
+
+    var tls_plugin = Server.plugins.registered_plugins.tls;
+
+    if (!tls_plugin.tls_opts_valid) {
+        logger.logerror("No valid TLS setup in the tls config. Cannot listen on port 465.");
         return;
     }
+
+    var options = tls_plugin.tls_opts;
 
     logger.logdebug("Creating TLS server on " + host + ':' + port);
     server = require('tls').createServer(options, conn_cb);
     server.has_tls=true;
+    Server.listeners.push(server);
     return server;
 };
 
@@ -212,13 +376,17 @@ Server.setup_smtp_listeners = function (plugins2, type, inactivity_timeout) {
             cb();
         });
 
+        server.on('close', function () {
+            logger.loginfo('Listener shutdown');
+        });
+
         // Fallback from IPv6 to IPv4 if not supported
         // But only if we supplied the default of [::0]:25
         server.on('error', function (e) {
             if (e.code === 'EAFNOSUPPORT' &&
                     /^::0/.test(host) &&
                     Server.default_host) {
-                server.listen(port, '0.0.0.0');
+                server.listen(port, '0.0.0.0', 0);
             }
             else {
                 // Pass error to callback
@@ -226,7 +394,7 @@ Server.setup_smtp_listeners = function (plugins2, type, inactivity_timeout) {
             }
         });
 
-        server.listen(port, host);
+        server.listen(port, host, 0);
     };
 
     async.each(listeners, setupListener, runInitHooks);
@@ -260,6 +428,7 @@ Server.setup_http_listeners = function () {
         }
 
         Server.http.server = require('http').createServer(app);
+        Server.listeners.push(Server.http.server);
 
         Server.http.server.on('listening', function () {
             var addr = this.address();
@@ -272,7 +441,7 @@ Server.setup_http_listeners = function () {
             cb(e);
         });
 
-        Server.http.server.listen(hp[2], hp[1]);
+        Server.http.server.listen(hp[2], hp[1], 0);
     };
 
     var registerRoutes = function (err) {
@@ -280,7 +449,7 @@ Server.setup_http_listeners = function () {
             logger.logerror('Failed to setup http routes: ' + err.message);
         }
 
-        plugins.run_hooks('init_http', Server);
+        Server.plugins.run_hooks('init_http', Server);
         app.use(Server.http.express.static(Server.get_http_docroot()));
         app.use(Server.handle404);
     };
@@ -300,14 +469,16 @@ Server.init_master_respond = function (retval, msg) {
 
     // Load the queue if we're just one process
     if (!(cluster && c.nodes)) {
-        out.load_queue();
+        if (c.outbound) {
+            outbound.load_queue();
+        }
         Server.setup_http_listeners();
         return;
     }
 
     // Running under cluster, fork children here, so that
     // cluster events can be registered in init_master hooks.
-    out.scan_queue_pids(function (err, pids) {
+    outbound.scan_queue_pids(function (err, pids) {
         if (err) {
             Server.logcrit("Scanning queue failed. Shutting down.");
             return logger.dump_and_exit(1);
@@ -331,27 +502,29 @@ Server.init_master_respond = function (retval, msg) {
             logger.lognotice('worker ' + worker.id + ' listening on ' +
                     address.address + ':' + address.port);
         });
-        cluster.on('exit', function (worker, code, signal) {
-            if (signal) {
-                logger.lognotice('worker ' + worker.id +
-                        ' killed by signal ' + signal);
-            }
-            else if (code !== 0) {
-                logger.lognotice('worker ' + worker.id +
-                        ' exited with error code: ' + code);
-            }
-            if (signal || code !== 0) {
-                // Restart worker
-                var new_worker = cluster.fork({
-                    CLUSTER_MASTER_PID: process.pid
-                });
-                new_worker.send({
-                    event: 'outbound.load_pid_queue', data: worker.process.pid,
-                });
-            }
-        });
+        cluster.on('exit', cluster_exit_listener);
     });
 };
+
+function cluster_exit_listener (worker, code, signal) {
+    if (signal) {
+        logger.lognotice('worker ' + worker.id +
+                ' killed by signal ' + signal);
+    }
+    else if (code !== 0) {
+        logger.lognotice('worker ' + worker.id +
+                ' exited with error code: ' + code);
+    }
+    if (signal || code !== 0) {
+        // Restart worker
+        var new_worker = cluster.fork({
+            CLUSTER_MASTER_PID: process.pid
+        });
+        new_worker.send({
+            event: 'outbound.load_pid_queue', data: worker.process.pid,
+        });
+    }
+}
 
 Server.init_child_respond = function (retval, msg) {
     switch (retval) {
@@ -411,7 +584,7 @@ Server.init_http_respond = function () {
     Server.http.wss = new WebSocketServer({ server: Server.http.server });
     logger.loginfo('Server.http.wss loaded');
 
-    plugins.run_hooks('init_wss', Server);
+    Server.plugins.run_hooks('init_wss', Server);
 };
 
 Server.init_wss_respond = function () {
@@ -430,7 +603,7 @@ Server.get_http_docroot = function () {
     return Server.http.cfg.docroot;
 };
 
-Server.handle404 = function(req, res){
+Server.handle404 = function (req, res){
     // abandon all hope, serve up a 404
     var docroot = Server.get_http_docroot();
 

@@ -1,4 +1,5 @@
 'use strict';
+/*eslint no-unused-vars: ["error", { "varsIgnorePattern": "queue_dir", "args": "none" }]*/
 
 test.expect(14);
 
@@ -15,6 +16,7 @@ var queue_dir = test_queue_dir;
 var util_hmailitem = require('./../fixtures/util_hmailitem');
 var async          = require('async');
 var dns            = require('dns');
+var constants      = require('haraka-constants');
 
 
 var outbound_context = {
@@ -26,7 +28,7 @@ async.series(
     [
         // test get-mx-deny triggers bounce(...)
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var orig_bounce = HMailItem.prototype.bounce;
                 HMailItem.prototype.bounce = function (err, opts) {
                     test.ok(true, 'get_mx=DENY: bounce function called');
@@ -43,7 +45,7 @@ async.series(
         },
         // test get-mx-denysoft triggers temp_fail(...)
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var orig_temp_fail = HMailItem.prototype.temp_fail;
                 HMailItem.prototype.temp_fail = function (err, opts) {
                     test.ok(true, 'get_mx-DENYSOFT: temp_fail function called');
@@ -60,7 +62,7 @@ async.series(
         },
         // test found_mx({code:dns.NXDOMAIN}) triggers bounce(...)
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var orig_bounce = HMailItem.prototype.bounce;
                 HMailItem.prototype.bounce = function (err, opts) {
                     test.ok(true, 'found_mx({code: dns.NXDOMAIN}): bounce function called');
@@ -73,7 +75,7 @@ async.series(
         },
         // test found_mx({code:'NOMX'}) triggers bounce(...)
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var orig_bounce = HMailItem.prototype.bounce;
                 HMailItem.prototype.bounce = function (err, opts) {
                     test.ok(true, 'found_mx({code: "NOMX"}): bounce function called');
@@ -86,7 +88,7 @@ async.series(
         },
         // test found_mx({code:'SOME-OTHER-ERR'}) triggers temp_fail(...)
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var orig_temp_fail = HMailItem.prototype.temp_fail;
                 HMailItem.prototype.temp_fail = function (err, opts) {
                     test.ok(true, 'found_mx({code: "SOME-OTHER-ERR"}): temp_fail function called');
@@ -99,7 +101,7 @@ async.series(
         },
         // test found_mx(null, [{priority:0,exchange:''}]) triggers bounce(...)
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 var orig_bounce = HMailItem.prototype.bounce;
                 HMailItem.prototype.bounce = function (err, opts) {
                     test.ok(true, 'found_mx(null, [{priority:0,exchange:""}]): bounce function called');
@@ -112,7 +114,7 @@ async.series(
         },
         // test try_deliver while hmail.mxlist=[] triggers bounce(...)
         function (callback) {
-            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function(mock_hmail){
+            util_hmailitem.newMockHMailItem(outbound_context, test, {}, function (mock_hmail){
                 mock_hmail.mxlist = [];
                 var orig_temp_fail = HMailItem.prototype.temp_fail;
                 HMailItem.prototype.temp_fail = function (err, opts) {

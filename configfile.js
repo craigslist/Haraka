@@ -1,8 +1,11 @@
 'use strict';
 // Config file loader
 
+var fs   = require('fs');
 var path = require('path');
 var yaml = require('js-yaml');
+
+var logger = getStubLogger();
 
 // for "ini" type files
 var regex = exports.regex = {
@@ -20,9 +23,6 @@ var regex = exports.regex = {
 
 var cfreader = exports;
 
-cfreader.config_path = process.env.HARAKA ?
-                       path.join(process.env.HARAKA, 'config')
-                     : path.join(__dirname, './config');
 cfreader.watch_files = true;
 cfreader._config_cache = {};
 cfreader._read_args = {};
@@ -32,17 +32,60 @@ cfreader._enoent_files = {};
 cfreader._sedation_timers = {};
 cfreader._overrides = {};
 
-// Stubs that can be used before logger is loaded
-var logger = {
-    logdebug: function () {
-        console.log.apply(console, arguments);
-    },
-    loginfo: function () {
-        console.log.apply(console, arguments);
-    },
-    logerror: function () {
-        console.error.apply(console, arguments);
-    },
+var config_dir_candidates = [
+    path.join(__dirname, 'config'),    // Haraka ./config dir
+    __dirname,                         // npm packaged plugins
+];
+
+function get_path_to_config_dir () {
+    if (process.env.HARAKA) {
+        // logger.logdebug('process.env.HARAKA: ' + process.env.HARAKA);
+        cfreader.config_path = path.join(process.env.HARAKA, 'config');
+        return;
+    }
+
+    if (process.env.NODE_ENV === 'test') {
+        // loaded by haraka-config/test/*
+        cfreader.config_path = path.join(__dirname, 'test', 'config');
+        return;
+    }
+
+    if (/node_modules\/haraka-config$/.test(__dirname)) {
+        // loaded by a npm packaged module
+        cfreader.config_path = path.resolve(__dirname, '..', '..');
+        return;
+    }
+
+    for (let i=0; i < config_dir_candidates.length; i++) {
+        let candidate = config_dir_candidates[i];
+        try {
+            var stat = fs.statSync(candidate);
+            if (stat && stat.isDirectory()) {
+                cfreader.config_path = candidate;
+                return;
+            }
+        }
+        catch (ignore) {
+            logger.logerror(ignore.message);
+        }
+    }
+}
+get_path_to_config_dir();
+// logger.logdebug('cfreader.config_path: ' + cfreader.config_path);
+
+function getStubLogger () {
+    // stubs used before logger is loaded
+    return {
+        logdebug: function () {
+            console.log.apply(console, arguments);
+        },
+        loginfo: function () {
+            console.log.apply(console, arguments);
+        },
+        logerror: function () {
+            console.error.apply(console, arguments);
+        },
+    }
 }
 
 cfreader.on_watch_event = function (name, type, options, cb) {
@@ -155,7 +198,7 @@ cfreader.get_cache_key = function (name, options) {
     return result;
 };
 
-cfreader.read_config = function(name, type, cb, options) {
+cfreader.read_config = function (name, type, cb, options) {
     // Store arguments used so we can re-use them by filename later
     // and so we know which files we've attempted to read so that
     // we can ignore any other files written to the same directory.
@@ -169,7 +212,7 @@ cfreader.read_config = function(name, type, cb, options) {
     // Check cache first
     if (!process.env.WITHOUT_CONFIG_CACHE) {
         var cache_key = cfreader.get_cache_key(name, options);
-        if (cfreader._config_cache[cache_key]) {
+        if (cfreader._config_cache[cache_key] !== undefined) {
             //logger.logdebug('Returning cached file: ' + name);
             var cached = cfreader._config_cache[cache_key];
             // Make sure that any .ini file booleans are applied
@@ -188,13 +231,15 @@ cfreader.read_config = function(name, type, cb, options) {
 
     // We can watch the directory on these platforms which
     // allows us to notice when files are newly created.
-    var os = process.platform;
-    if (os === 'linux' || os === 'win32') {
-        cfreader.watch_dir();
-    }
-    else {
-        // All other operating systems
-        cfreader.watch_file(name, type, cb, options);
+    switch (process.platform) {
+        case 'win32':
+        case 'win64':
+        case 'linux':
+            cfreader.watch_dir();
+            break;
+        default:
+            // All other operating systems
+            cfreader.watch_file(name, type, cb, options);
     }
 
     return result;
@@ -223,7 +268,22 @@ cfreader.ensure_enoent_timer = function () {
     }, 60 * 1000);
 };
 
-cfreader.empty_config = function(type) {
+process.on('message', function (msg) {
+    if (msg.event && msg.event == 'cfreader.shutdown') {
+        logger.loginfo("[cfreader] Shutting down enoent timer");
+        clearInterval(cfreader._enoent_timer);
+        logger.loginfo("[cfreader] Clearing any sedation timers");
+        for (var k in cfreader._sedation_timers) {
+            clearTimeout(cfreader._sedation_timers[k]);
+        }
+        logger.loginfo("[cfreader] Removing watchers");
+        for (var k2 in cfreader._watchers) {
+            cfreader._watchers[k2].close();
+        }
+    }
+});
+
+cfreader.empty_config = function (type) {
     if (type === 'ini') {
         return { main: {} };
     }
@@ -235,7 +295,7 @@ cfreader.empty_config = function(type) {
     }
 };
 
-cfreader.load_config = function(name, type, options) {
+cfreader.load_config = function (name, type, options) {
     var result;
 
     switch (type) {
@@ -276,11 +336,11 @@ cfreader.load_config = function(name, type, options) {
     return result;
 };
 
-cfreader.load_json_config = function(name) {
+cfreader.load_json_config = function (name) {
     var result = cfreader.empty_config('json');
     var cache_key = cfreader.get_cache_key(name);
     try {
-        if (utils.existsSync(name)) {
+        if (fs.existsSync(name)) {
             result = JSON.parse(fs.readFileSync(name));
         }
         else {
@@ -288,7 +348,7 @@ cfreader.load_json_config = function(name) {
             // If filename ends in .json, try .yaml instead
             if (/\.json$/.test(name)) {
                 var yaml_name = name.replace(/\.json$/, '.yaml');
-                if (utils.existsSync(yaml_name)) {
+                if (fs.existsSync(yaml_name)) {
                     // We have to read_config() here, so the file is watched
                     result = cfreader.read_config(yaml_name, 'yaml');
                     // Replace original config cache with this result
@@ -319,7 +379,7 @@ cfreader.process_file_overrides = function (name, result) {
     var cache_key = cfreader.get_cache_key(name);
     if (cfreader._config_cache[cache_key]) {
         var ck_keys = Object.keys(cfreader._config_cache[cache_key]);
-        for (var i=0; i<ck_keys.length; i++) {
+        for (let i=0; i<ck_keys.length; i++) {
             if (ck_keys[i].substr(0,1) === '!') {
                 delete cfreader._config_cache[path.join(cfreader.config_path, ck_keys[i].substr(1))];
             }
@@ -330,7 +390,7 @@ cfreader.process_file_overrides = function (name, result) {
     // configuration file data using by prefixing the
     // outer variable name with ! e.g. !smtp.ini
     var keys = Object.keys(result);
-    for (var i=0; i<keys.length; i++) {
+    for (let i=0; i<keys.length; i++) {
         if (keys[i].substr(0,1) === '!') {
             var ofp = path.join(cfreader.config_path, keys[i].substr(1));
             cfreader._overrides[ofp] = true;
@@ -348,10 +408,10 @@ cfreader.process_file_overrides = function (name, result) {
     }
 };
 
-cfreader.load_yaml_config = function(name) {
+cfreader.load_yaml_config = function (name) {
     var result = cfreader.empty_config('yaml');
     try {
-        if (utils.existsSync(name)) {
+        if (fs.existsSync(name)) {
             result = yaml.safeLoad(fs.readFileSync(name, 'utf8'));
         }
     }
@@ -402,13 +462,13 @@ cfreader.init_booleans = function (options, result) {
     return bool_matches;
 };
 
-cfreader.load_ini_config = function(name, options) {
+cfreader.load_ini_config = function (name, options) {
     var result       = cfreader.empty_config('ini');
     var current_sect = result.main;
     var current_sect_name = 'main';
     var bool_matches = cfreader.init_booleans(options, result);
 
-    if (!utils.existsSync(name)) { return result; }
+    if (!fs.existsSync(name)) { return result; }
 
     try {
         var data = fs.readFileSync(name, 'UTF-8');
@@ -418,7 +478,7 @@ cfreader.load_ini_config = function(name, options) {
         var setter;
         var pre = '';
 
-        lines.forEach(function(line) {
+        lines.forEach(function (line) {
             if (regex.comment.test(line)) {
                 return;
             }
@@ -442,16 +502,20 @@ cfreader.load_ini_config = function(name, options) {
             if (match) {
                 is_array_match = regex.is_array.exec(match[1]);
                 if (is_array_match){
-                    setter = function(key, value){
+                    setter = function (key, value) {
                         key = key.replace('[]', '');
                         if (! current_sect[key]) current_sect[key] = [];
                         current_sect[key].push(value) };
                 }
                 else {
-                    setter = function(key, value) { current_sect[key] = value };
+                    setter = function (key, value) { current_sect[key] = value };
                 }
                 if (options && Array.isArray(options.booleans) &&
-                    bool_matches.indexOf(current_sect_name + '.' + match[1]) !== -1)
+                    (
+                        bool_matches.indexOf(current_sect_name + '.' + match[1]) !== -1
+                        ||
+                        bool_matches.indexOf('*.' + match[1]) !== -1
+                    ))
                 {
                     setter(match[1], regex.is_truth.test(match[2]));
                     logger.logdebug('Returning boolean ' + current_sect[match[1]] +
@@ -485,11 +549,11 @@ cfreader.load_ini_config = function(name, options) {
     return result;
 };
 
-cfreader.load_flat_config = function(name, type) {
+cfreader.load_flat_config = function (name, type) {
     var result = cfreader.empty_config();
 
     try {
-        if (utils.existsSync(name)) {
+        if (fs.existsSync(name)) {
             var data   = fs.readFileSync(name, "UTF-8");
             if (type === 'data') {
                 while (data.length > 0) {
@@ -501,7 +565,7 @@ cfreader.load_flat_config = function(name, type) {
             }
             var lines  = data.split(/\r\n|\r|\n/);
 
-            lines.forEach( function(line) {
+            lines.forEach( function (line) {
                 var line_data;
                 if (regex.comment.test(line)) {
                     return;
@@ -541,9 +605,9 @@ cfreader.load_flat_config = function(name, type) {
     return result;
 };
 
-cfreader.load_binary_config = function(name, type) {
+cfreader.load_binary_config = function (name, type) {
     try {
-        if (utils.existsSync(name)) {
+        if (fs.existsSync(name)) {
             return fs.readFileSync(name);
         }
         return null;
@@ -559,6 +623,4 @@ cfreader.load_binary_config = function(name, type) {
         }
     }
 };
-var fs     = require('fs');
-var utils  = require('./utils');
 logger = require('./logger');

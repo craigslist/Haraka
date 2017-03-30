@@ -1,8 +1,7 @@
 // log our denys
-/* jshint multistr: true */
 
 var urlp  = require('url');
-var utils = require('./utils');
+var utils = require('haraka-utils');
 
 var db;
 var select = "SELECT COUNT(*) AS hits, plugin FROM graphdata WHERE timestamp >= ? AND timestamp < ? GROUP BY plugin";
@@ -224,7 +223,7 @@ exports.get_data = function (res, earliest, today, group_by) {
             return res.end();
         }
         else {
-            return process.nextTick(function () {
+            return setImmediate(function () {
                 plugin.get_data(res, next_stop, today, group_by);
             });
         }

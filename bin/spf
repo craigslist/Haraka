@@ -10,7 +10,7 @@ var spf = new SPF();
 
 var parsed = nopt({ 'debug': Boolean, 'ip': String, 'helo': String, 'domain': String  });
 
-function print_usage() {
+function print_usage () {
     console.log('Usage: spf [--debug] --ip <ip> --helo <helo> --domain <domain>');
     process.exit(1);
 }
@@ -24,8 +24,8 @@ if (!parsed.debug) {
 }
 
 if (parsed.domain) {
-    var domain;       
-    if (domain = /\@(.+)$/.exec(parsed.domain)) {
+    var domain = /\@(.+)$/.exec(parsed.domain);
+    if (domain) {
         domain = domain[1];
     }
     else {

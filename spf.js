@@ -77,7 +77,7 @@ SPF.prototype.return_const = function (qualifier) {
 SPF.prototype.expand_macros = function (str) {
     var macro = /%{([slodipvh])((?:(?:\d+)?r?)?)?([-.+,/_=])?}/ig;
     var match;
-    while (match = macro.exec(str)) {
+    while ((match = macro.exec(str))) {
         // match[1] = macro-letter
         // match[2] = transformers
         // match[3] = delimiter
@@ -172,8 +172,8 @@ SPF.prototype.check_host = function (ip, domain, mail_from, cb) {
         if (err) {
             self.log_debug('error looking up TXT record: ' + err.message);
             switch (err.code) {
-                case 'ENOTFOUND':
-                case 'ENODATA':
+                case dns.NOTFOUND:
+                case dns.NODATA:
                 case dns.NXDOMAIN:  return cb(null, self.SPF_NONE);
                 default:            return cb(null, self.SPF_TEMPERROR);
             }
@@ -223,7 +223,7 @@ SPF.prototype.check_host = function (ip, domain, mail_from, cb) {
             // Skip blanks
             var obj;
             if (!split[i]) continue;
-            if (match = (mech_regexp1.exec(split[i]) || mech_regexp2.exec(split[i]))) {
+            if ((match = (mech_regexp1.exec(split[i]) || mech_regexp2.exec(split[i])))) {
                 // match[1] = qualifier
                 // match[2] = mechanism
                 // match[3] = optional args
@@ -254,7 +254,7 @@ SPF.prototype.check_host = function (ip, domain, mail_from, cb) {
                 obj[match[2]] = [ match[1], match[3] ];
                 mech_array.push(obj);
             }
-            else if (match = mod_regexp.exec(split[i])) {
+            else if ((match = mod_regexp.exec(split[i]))) {
                 self.log_debug('found modifier: ' + match);
                 // match[1] = modifier
                 // match[2] = name
@@ -373,8 +373,8 @@ SPF.prototype.mech_exists = function (qualifier, args, cb) {
         if (err) {
             self.log_debug('mech_exists: ' + err);
             switch (err.code) {
-                case 'ENOTFOUND':
-                case 'ENODATA':
+                case dns.NOTFOUND:
+                case dns.NODATA:
                 case dns.NXDOMAIN:
                     return cb(null, self.SPF_NONE);
                 default:
@@ -418,8 +418,8 @@ SPF.prototype.mech_a = function (qualifier, args, cb) {
         if (err) {
             self.log_debug('mech_a: ' + err);
             switch (err.code) {
-                case 'ENOTFOUND':
-                case 'ENODATA':
+                case dns.NOTFOUND:
+                case dns.NODATA:
                 case dns.NXDOMAIN:  return cb(null, self.SPF_NONE);
                 default:            return cb(null, self.SPF_TEMPERROR);
             }
@@ -469,8 +469,8 @@ SPF.prototype.mech_mx = function (qualifier, args, cb) {
     dns.resolveMx(domain, function (err, mxes) {
         if (err) {
             switch (err.code) {
-                case 'ENOTFOUND':
-                case 'ENODATA':
+                case dns.NOTFOUND:
+                case dns.NODATA:
                 case dns.NXDOMAIN:  return cb(null, self.SPF_NONE);
                 default:            return cb(null, self.SPF_TEMPERROR);
             }
@@ -499,8 +499,8 @@ SPF.prototype.mech_mx = function (qualifier, args, cb) {
                 pending--;
                 if (err4) {
                     switch (err4.code) {
-                        case 'ENOTFOUND':
-                        case 'ENODATA':
+                        case dns.NOTFOUND:
+                        case dns.NODATA:
                         case dns.NXDOMAIN:  break;
                         default:            return cb(null, self.SPF_TEMPERROR);
                     }

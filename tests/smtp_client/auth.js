@@ -10,7 +10,7 @@ test.equals(pool_name, Object.keys(server.notes.pool)[0]);
 test.equals(0, server.notes.pool[pool_name].getPoolSize());
 test.equals(0, server.notes.pool[pool_name].availableObjectsCount());
 
-exports.get_client(server, function(err, smtp_client) {
+exports.get_client(server, function (err, smtp_client) {
     test.equals(null, err);
     test.equals(1, server.notes.pool[pool_name].getPoolSize());
     test.equals(0, server.notes.pool[pool_name].availableObjectsCount());
@@ -102,9 +102,9 @@ exports.get_client(server, function(err, smtp_client) {
                 reading_body = true;
             }
             while (true) {
-                var line = data.shift();
-                this.emit('line', line + '\r\n');
-                if (line[3] == ' ') break;
+                var line2 = data.shift();
+                this.emit('line', line2 + '\r\n');
+                if (line2[3] == ' ') break;
             }
         }
 

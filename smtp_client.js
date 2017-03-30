@@ -2,6 +2,10 @@
 // SMTP client object and class. This allows every part of the client
 // protocol to be hooked for different levels of control, such as
 // smtp_forward and smtp_proxy queue plugins.
+// This newer version can use HostPool to get a connection to a pool of
+// possible hosts in the configuration value "forwarding_host_pool", rather
+// than a bunch of connections to a single host from the configuration values
+// in "host" and "port" (see host_pool.js).
 
 // node.js builtins
 var events       = require('events');
@@ -14,9 +18,9 @@ var ipaddr       = require('ipaddr.js');
 // haraka libs
 var line_socket = require('./line_socket');
 var logger      = require('./logger');
-var utils       = require('./utils');
-var config      = require('./config');
-var tls_socket  = require('./tls_socket');
+var utils       = require('haraka-utils');
+var HostPool    = require('./host_pool');
+var net_utils   = require('haraka-net-utils');
 
 var smtp_regexp = /^([0-9]{3})([ -])(.*)/;
 var STATE = {
@@ -39,6 +43,8 @@ function SMTPClient (port, host, connect_timeout, idle_timeout) {
     this.connected = false;
     this.authenticated = false;
     this.auth_capabilities = [];
+    this.host = host;
+    this.port = port;
     var client = this;
 
     this.socket.on('line', function (line) {
@@ -142,7 +148,11 @@ function SMTPClient (port, host, connect_timeout, idle_timeout) {
             if (!error) {
                 error = '';
             }
-            var errMsg = client.uuid + ': SMTP connection ' + msg + ' ' + error;
+            // msg is e.g. "errored" or "timed out"
+            // error is e.g. "Error: connect ECONNREFUSE"
+            var errMsg = client.uuid +
+                ': [' + client.host + ':' + client.port + '] ' +
+                'SMTP connection ' + msg + ' ' + error;
             switch (client.state) {
                 case STATE.ACTIVE:
                 case STATE.IDLE:
@@ -155,6 +165,11 @@ function SMTPClient (port, host, connect_timeout, idle_timeout) {
                 client.emit('error', errMsg);
                 return;
             }
+            if ((msg === 'errored' || msg === 'timed out')
+                  && client.state === STATE.DESTROYED){
+                client.emit('connection-error', errMsg);
+            } // don't return, continue (original behavior)
+
             logger.logdebug('[smtp_client_pool] ' + errMsg + ' (state=' + client.state + ')');
         };
     };
@@ -168,25 +183,25 @@ function SMTPClient (port, host, connect_timeout, idle_timeout) {
 util.inherits(SMTPClient, events.EventEmitter);
 
 SMTPClient.prototype.load_tls_config = function (plugin) {
-    var key = config.get('tls_key.pem', 'binary');
-    var cert = config.get('tls_cert.pem', 'binary');
-    var tls_options = (key && cert) ? { key: key, cert: cert } : {};
-    this.tls_config = tls_socket.load_tls_ini();
-    var config_options = ['ciphers','requestCert','rejectUnauthorized'];
+    var tls_options = {};
+    this.tls_config = net_utils.load_tls_ini();
+    var config_options = ['key','cert','ciphers','requestCert','rejectUnauthorized'];
 
-    for (var i = 0; i < config_options.length; i++) {
-        var opt = config_options[i];
+    for (let i = 0; i < config_options.length; i++) {
+        let opt = config_options[i];
         if (this.tls_config.main[opt] === undefined) { continue; }
         tls_options[opt] = this.tls_config.main[opt];
     }
 
     if (this.tls_config[plugin.name]) {
-        for (var i = 0; i < config_options.length; i++) {
-            var opt = config_options[i];
+        for (let i = 0; i < config_options.length; i++) {
+            let opt = config_options[i];
             if (this.tls_config[plugin.name][opt] === undefined) { continue; }
             tls_options[opt] = this.tls_config[plugin.name][opt];
         }
     }
+
+    if (this.host) { tls_options.servername = this.host }
 
     this.tls_options = tls_options;
 }
@@ -284,7 +299,7 @@ exports.get_pool = function (server, port, host, connect_timeout, pool_timeout, 
                     host + ' port=' + port + ' pool_timeout=' + pool_timeout + ' created');
                 callback(null, smtp_client);
             },
-            destroy: function(smtp_client) {
+            destroy: function (smtp_client) {
                 logger.logdebug('[smtp_client_pool] ' + smtp_client.uuid + ' destroyed, state=' + smtp_client.state);
                 smtp_client.state = STATE.DESTROYED;
                 smtp_client.socket.destroy();
@@ -336,8 +351,12 @@ exports.get_client_plugin = function (plugin, connection, c, callback) {
             pass: c.auth_pass
         }
     }
-    var pool = exports.get_pool(connection.server, c.port, c.host,
+
+    var hostport = get_hostport(connection, connection.server.notes, c);
+
+    var pool = exports.get_pool(connection.server, hostport.port, hostport.host,
                                 c.connect_timeout, c.timeout, c.max_connections);
+
     pool.acquire(function (err, smtp_client) {
         connection.logdebug(plugin, 'Got smtp_client: ' + smtp_client.uuid);
 
@@ -363,7 +382,7 @@ exports.get_client_plugin = function (plugin, connection, c, callback) {
 
         var helo = function (command) {
             if (smtp_client.xclient) {
-                smtp_client.send_command(command, connection.hello_host);
+                smtp_client.send_command(command, connection.hello.host);
             }
             else {
                 smtp_client.send_command(command, plugin.config.get('me'));
@@ -380,14 +399,14 @@ exports.get_client_plugin = function (plugin, connection, c, callback) {
             for (var line in smtp_client.response) {
                 if (smtp_client.response[line].match(/^XCLIENT/)) {
                     if (!smtp_client.xclient) {
-                        smtp_client.send_command('XCLIENT', 'ADDR=' + connection.remote_ip);
+                        smtp_client.send_command('XCLIENT', 'ADDR=' + connection.remote.ip);
                         return;
                     }
                 }
 
                 if (smtp_client.response[line].match(/^STARTTLS/) && !secured) {
-                    if (!(c.host in smtp_client.tls_config.no_tls_hosts) &&
-                        !(smtp_client.remote_ip in smtp_client.tls_config.no_tls_hosts) &&
+                    if (!net_utils.ip_in_list(smtp_client.tls_config.no_tls_hosts, c.host) &&
+                        !net_utils.ip_in_list(smtp_client.tls_config.no_tls_hosts, smtp_client.remote_ip) &&
                         c.enable_tls)
                     {
                         smtp_client.socket.on('secure', on_secured);
@@ -408,7 +427,7 @@ exports.get_client_plugin = function (plugin, connection, c, callback) {
         });
 
         smtp_client.on('helo', function () {
-            if (!config.auth || smtp_client.authenticated) {
+            if (!c.auth || smtp_client.authenticated) {
                 if (smtp_client.is_dead_sender(plugin, connection)) {
                     return;
                 }
@@ -416,19 +435,19 @@ exports.get_client_plugin = function (plugin, connection, c, callback) {
                 return;
             }
 
-            if (config.auth.type === null || typeof(config.auth.type) === 'undefined') { return; } // Ignore blank
-            var auth_type = config.auth.type.toLowerCase();
+            if (c.auth.type === null || typeof(c.auth.type) === 'undefined') { return; } // Ignore blank
+            var auth_type = c.auth.type.toLowerCase();
             if (smtp_client.auth_capabilities.indexOf(auth_type) === -1) {
                 throw new Error("Auth type \"" + auth_type + "\" not supported by server (supports: " + smtp_client.auth_capabilities.join(',') + ")");
             }
             switch (auth_type) {
                 case 'plain':
-                    if (!config.auth.user || !config.auth.pass) {
+                    if (!c.auth.user || !c.auth.pass) {
                         throw new Error("Must include auth.user and auth.pass for PLAIN auth.");
                     }
-                    logger.logdebug('[smtp_client_pool] uuid=' + smtp_client.uuid + ' authenticating as "' + config.auth.user + '"');
+                    logger.logdebug('[smtp_client_pool] uuid=' + smtp_client.uuid + ' authenticating as "' + c.auth.user + '"');
                     smtp_client.send_command('AUTH',
-                        'PLAIN ' + utils.base64(config.auth.user + "\0" + config.auth.user + "\0" + config.auth.pass) );
+                        'PLAIN ' + utils.base64(c.auth.user + "\0" + c.auth.user + "\0" + c.auth.pass) );
                     break;
                 case 'cram-md5':
                     throw new Error("Not implemented");
@@ -445,14 +464,27 @@ exports.get_client_plugin = function (plugin, connection, c, callback) {
             smtp_client.send_command('MAIL', 'FROM:' + connection.transaction.mail_from);
         });
 
+        // these errors only get thrown when the connection is still active
         smtp_client.on('error', function (msg) {
             connection.logwarn(plugin, msg);
             smtp_client.call_next();
         });
 
+        // these are the errors thrown when the connection is dead
+        smtp_client.on('connection-error', function (error){
+            // error contains e.g. "Error: connect ECONNREFUSE"
+            logger.logerror("backend failure: " + smtp_client.host + ':' + smtp_client.port + ' - ' + error);
+            var host_pool = connection.server.notes.host_pool;
+            // only exists for if forwarding_host_pool is set in the config
+            if (host_pool){
+                host_pool.failed(smtp_client.host, smtp_client.port);
+            }
+            smtp_client.call_next();
+        });
+
         if (smtp_client.connected) {
             if (smtp_client.xclient) {
-                smtp_client.send_command('XCLIENT', 'ADDR=' + connection.remote_ip);
+                smtp_client.send_command('XCLIENT', 'ADDR=' + connection.remote.ip);
             }
             else {
                 smtp_client.emit('helo');
@@ -462,3 +494,36 @@ exports.get_client_plugin = function (plugin, connection, c, callback) {
         callback(err, smtp_client);
     });
 };
+
+function get_hostport (connection, server_notes, config_arg) {
+
+    var c = config_arg;
+    if (c.forwarding_host_pool){
+        if (! server_notes.host_pool){
+            connection.logwarn("creating a new host_pool from " + c.forwarding_host_pool);
+            server_notes.host_pool =
+                new HostPool(
+                    c.forwarding_host_pool, // "1.2.3.4:420,  5.6.7.8:420
+                    c.dead_forwarding_host_retry_secs
+                );
+        }
+        var host_pool = server_notes.host_pool;
+
+        var host = host_pool.get_host();
+        if (! host){
+            logger.logerror('[smtp_client_pool] no backend hosts in pool!');
+            throw new Error("no backend hosts found in pool!");
+        }
+
+        return host; // { host: 1.2.3.4, port: 567 }
+    }
+    else if (c.host && c.port){
+        return { host: c.host, port: c.port };
+    }
+    else {
+        // current behavior in get_pool is to default to localhost:25
+        logger.logwarn("[smtp_client_pool] forwarding_host_pool or host and port " +
+                "were not found in config file");
+        throw new Error("You must specify either forwarding_host_pool or host and port");
+    }
+}

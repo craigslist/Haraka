@@ -6,8 +6,11 @@ For this plugin to work you must have SSL certificates installed correctly.
 
 ## Install Location
 
-    config/tls_key.pem
-    config/tls_cert.pem
+Key and certificate chain default locations are as follows. The paths
+can be overridden in the `config/tls.ini` file using `key` and `cert` options.
+
+    key=tls_key.pem
+    cert=tls_cert.pem
 
 ## Purchased Certificate
 
@@ -38,15 +41,43 @@ be the same as the contents of your `config/me` file.
 
 ## Configuration
 
-The following settings can be specified in config/tls.ini.
+The following settings can be specified in `config/tls.ini`.
 
-### `no_tls_hosts`
+### key
 
-If needed, add this section to the tls.ini file and list any IPs that have
+Specifies an alternative location for the key file. If multiple keys are to be
+specified, use `key[]=` assignment for each of them. Non-absolute paths are relative
+to the `config/` directory.
+
+For example, to configure single key and cert chain files, located in the `config/`
+directory, use the following in `tls.ini`:
+
+    key=example.com.key.pem
+    cert=example.com.crt-chain.pem
+
+If multiple pairs of key and cert chain files should be used, outside of the haraka
+`config/` directory, configure instead:
+
+    key[]=/etc/ssl/private/example.com.rsa.key.pem
+    cert[]=/etc/ssl/private/example.com.rsa.crt-chain.pem
+    key[]=/etc/ssl/private/example.com.ecdsa.key.pem
+    cert[]=/etc/ssl/private/example.com.ecdsa.crt-chain.pem
+
+### cert
+
+Specifies an alternative location for the certificate chain file. If multiple
+certificate chains are to be used, use `cert[]=` assignment for each of them.
+Non-absolute paths are relative to the `config/` directory. See the description of
+the `key` parameter for specific use.
+
+### no_tls_hosts
+
+If needed, add this section to the `config/tls.ini` file and list any IP ranges that have
 broken TLS. Ex:
 
     [no_tls_hosts]
-    192.168.1.3=true
+    192.168.1.3
+    172.16.0.0/16
 
 
 The [Node.js TLS](http://nodejs.org/api/tls.html) page has additional information
@@ -54,23 +85,64 @@ about the following options.
 
 ### ciphers
 
-A list of allowable ciphers to use.
+A list of allowable ciphers to use. Example:
 
-    `ciphers=...`
+    ciphers=EECDH+AESGCM:EDH+aRSA+AESGCM:EECDH+AES256:EDH+aRSA+AES256:EECDH+AES128:EDH+aRSA+AES128:RSA+AES:RSA+3DES
 
 See also: [Strong SSL Ciphers](http://cipherli.st) and the [SSLlabs Test Page](https://www.ssllabs.com/ssltest/index.html)
+
+### honorCipherOrder
+
+If specified, the list of configured ciphers is treated as the cipher priority from
+highest to lowest. The first matching cipher will be used, instead of letting the
+client choose the cipher. The default is `false`.
+
+### ecdhCurve
+
+Specifies the elliptic curve used for ECDH or ECDHE ciphers.
+Only one curve can be specified. The default is `prime256v1` (NIST P-256).
+
+### dhparam
+
+Specifies the file containing the diffie-hellman parameters to
+use for DH or DHE key exchange. Create such a file using `openssl dhparam`.
+No DH ciphers can be used without this parameter given.
+
+    openssl dhparam -out config/dhparams.pem 2048
+
 
 ### requestCert
 
 Whether Haraka should request a certificate from a connecting client.
 
-    `requestCert=[true|false]`  (default: true)
+    requestCert=[true|false]  (default: true)
 
 ### rejectUnauthorized
 
 Reject connections from clients without a CA validated TLS certificate.
 
-    `rejectUnauthorized=[true|false]`  (default: false)
+    rejectUnauthorized=[true|false]  (default: false)
+
+### secureProtocol
+
+Specifies the OpenSSL API function used for handling the TLS session. Choose
+one of the methods described at the
+[OpenSSL API page](https://www.openssl.org/docs/manmaster/ssl/ssl.html).
+The default is `SSLv23_method`.
+
+### enableOCSPStapling
+
+Specifies that OCSP Stapling should be enabled, according to RFC 6066.
+Stapling of OCSP messages allows the client to receive these along the
+TLS session setup instead of delaying the session setup by requiring a
+separate http connection to the OCSP server.
+
+    enableOCSPStapling=[true|false]  (default: false)
+
+OCSP responses from the OCSP server are cached in memory for as long as
+they are valid, and get refreshed after that time. A server restart
+requires the OCSP responses to be fetched again upon the first client
+connection.
 
 ## Inbound Specific Configuration
 

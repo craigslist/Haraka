@@ -35,7 +35,8 @@ var _set_up = function (done) {
         "@example.co" : { "action" : "drop" },
         "test11@example.org" : { "action" : "drop" },
         "@demo.com" : { "action" : "alias", "to" : "test12-works@success.com" },
-        "test13@example.net" : { "action" : "alias", "to" : "test13-works@success.com" }
+        "test13@example.net" : { "action" : "alias", "to" : "test13-works@success.com" },
+        "test14@example.net" : { "action" : "alias", "to" : ["alice@success.com", "bob@success.com"] }
     };
 
     this.plugin.config.get = function (file, type) {
@@ -54,8 +55,8 @@ exports.aliases = {
     setUp : _set_up,
     'should have register function' : function (test) {
         test.expect(2);
-        test.isNotNull(this.plugin);
-        test.isFunction(this.plugin.register);
+        test.ok(this.plugin);
+        test.equal('function', typeof this.plugin.register);
         test.done();
     },
     'register function should inherit from queue/discard' : function (test) {
@@ -77,14 +78,14 @@ exports.aliases = {
     'register_hook() should register available function' : function (test) {
         test.expect(3);
         test.equals(this.plugin.register_hook.args[1], 'aliases');
-        test.isNotNull(this.plugin.aliases);
-        test.isFunction(this.plugin.aliases);
+        test.ok(this.plugin.aliases);
+        test.equal('function', typeof this.plugin.aliases);
         test.done();
     },
     'aliases hook always returns next()' : function (test) {
         var next = function (action) {
             test.expect(1);
-            test.isUndefined(action);
+            test.equals(undefined, action);
             test.done();
         };
 
@@ -120,9 +121,9 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(4);
-            test.isUndefined(this.connection.transaction.notes.discard);
-            test.isNotNull(this.connection.transaction.rcpt_to);
-            test.isArray(this.connection.transaction.rcpt_to);
+            test.equals(undefined, this.connection.transaction.notes.discard);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
             test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
             test.done();
         }.bind(this);
@@ -137,8 +138,8 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(3);
-            test.isNotNull(this.connection.transaction.rcpt_to);
-            test.isArray(this.connection.transaction.rcpt_to);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
             test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
             test.done();
         }.bind(this);
@@ -153,8 +154,24 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(3);
-            test.isNotNull(this.connection.transaction.rcpt_to);
-            test.isArray(this.connection.transaction.rcpt_to);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
+            test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
+            test.done();
+        }.bind(this);
+
+        this.plugin.aliases(next, this.connection, this.params);
+    },
+    'should map test4+testing@example.com to test4@example.com' : function (test) {
+        // these will get reset in _set_up everytime
+        this.recip = new Address('<test4+testing@example.com>');
+        this.params = [this.recip];
+        var result = new Address('<test4@example.com>');
+
+        var next = function (action) {
+            test.expect(3);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
             test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
             test.done();
         }.bind(this);
@@ -169,8 +186,8 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(3);
-            test.isNotNull(this.connection.transaction.rcpt_to);
-            test.isArray(this.connection.transaction.rcpt_to);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
             test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
             test.done();
         }.bind(this);
@@ -185,8 +202,8 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(3);
-            test.isNotNull(this.connection.transaction.rcpt_to);
-            test.isArray(this.connection.transaction.rcpt_to);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
             test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
             test.done();
         }.bind(this);
@@ -225,8 +242,8 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(3);
-            test.isNotNull(this.connection.transaction.rcpt_to);
-            test.isArray(this.connection.transaction.rcpt_to);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
             test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
             test.done();
         }.bind(this);
@@ -241,9 +258,41 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(3);
-            test.isNotNull(this.connection.transaction.rcpt_to);
-            test.isArray(this.connection.transaction.rcpt_to);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
             test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
+            test.done();
+        }.bind(this);
+
+        this.plugin.aliases(next, this.connection, this.params);
+    },
+    'should map test13+subaddress@example.net to test13-works@success.com' : function (test) {
+        // these will get reset in _set_up everytime
+        this.recip = new Address('<test13+subaddress@example.net>');
+        this.params = [this.recip];
+        var result = new Address('<test13-works@success.com>');
+
+        var next = function (action) {
+            test.expect(3);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
+            test.deepEqual(this.connection.transaction.rcpt_to.pop(), result);
+            test.done();
+        }.bind(this);
+
+        this.plugin.aliases(next, this.connection, this.params);
+    },
+    'should explode test14@example.net to alice@success.com and bob@success.com' : function (test) {
+        // these will get reset in _set_up everytime
+        this.recip = new Address('<test14@example.net>');
+        this.params = [this.recip];
+        var result = [new Address('<alice@success.com>'), new Address('<bob@success.com>')];
+
+        var next = function (action) {
+            test.expect(3);
+            test.ok(this.connection.transaction.rcpt_to);
+            test.ok(Array.isArray(this.connection.transaction.rcpt_to));
+            test.deepEqual(this.connection.transaction.rcpt_to, result);
             test.done();
         }.bind(this);
 
@@ -258,7 +307,7 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(1);
-            test.isUndefined(this.connection.transaction.notes.discard);
+            test.equals(undefined, this.connection.transaction.notes.discard);
             test.done();
         }.bind(this);
 
@@ -273,7 +322,7 @@ exports.aliases = {
 
         var next = function (action) {
             test.expect(1);
-            test.isUndefined(this.connection.transaction.notes.discard);
+            test.equals(undefined, this.connection.transaction.notes.discard);
             test.done();
         }.bind(this);
 

@@ -5,17 +5,15 @@ var path         = require('path');
 var Address      = require('address-rfc2821').Address;
 var fixtures     = require('haraka-test-fixtures');
 
-var ResultStore  = fixtures.result_store;
-
 var _set_up = function (done) {
 
     this.plugin = new fixtures.plugin('access');
-    this.plugin.config.root_path = path.resolve(__dirname, '../../config');
+    this.plugin.config.module_config(path.resolve(__dirname, 'config'));
     this.plugin.register();
 
     this.connection = fixtures.connection.createConnection();
     this.connection.transaction = {
-        results: new ResultStore(this.connection),
+        results: new fixtures.results(this.connection),
     };
 
     done();
@@ -195,8 +193,8 @@ exports.rdns_access = {
             test.ok(this.connection.results.get('access').msg.length);
             test.done();
         }.bind(this);
-        this.connection.remote_ip='1.1.1.1';
-        this.connection.remote_host='host.example.com';
+        this.connection.remote.ip='1.1.1.1';
+        this.connection.remote.host='host.example.com';
         this.plugin.rdns_access(cb, this.connection);
     },
     'whitelist': function (test) {
@@ -208,8 +206,8 @@ exports.rdns_access = {
             // test.ok(this.connection.results.has('access', 'pass', /white/));
             test.done();
         }.bind(this);
-        this.connection.remote_ip='1.1.1.1';
-        this.connection.remote_host='host.example.com';
+        this.connection.remote.ip='1.1.1.1';
+        this.connection.remote.host='host.example.com';
         this.plugin.list.white.conn['host.example.com']=true;
         this.plugin.rdns_access(cb, this.connection);
     },
@@ -222,8 +220,8 @@ exports.rdns_access = {
             test.ok(this.connection.results.get('access').fail.length);
             test.done();
         }.bind(this);
-        this.connection.remote_ip='1.1.1.1';
-        this.connection.remote_host='host.example.com';
+        this.connection.remote.ip='1.1.1.1';
+        this.connection.remote.host='host.example.com';
         this.plugin.list.black.conn['host.example.com']=true;
         this.plugin.rdns_access(cb, this.connection);
     },
@@ -236,8 +234,8 @@ exports.rdns_access = {
             test.ok(this.connection.results.get('access').fail.length);
             test.done();
         }.bind(this);
-        this.connection.remote_ip='1.1.1.1';
-        this.connection.remote_host='host.antispam.com';
+        this.connection.remote.ip='1.1.1.1';
+        this.connection.remote.host='host.antispam.com';
         var black = [ '.*spam.com' ];
         this.plugin.list_re.black.conn = new RegExp('^(' + black.join('|') + ')$', 'i');
         this.plugin.rdns_access(cb, this.connection);

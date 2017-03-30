@@ -6,8 +6,8 @@ var dns       = require('dns');
 var net       = require('net');
 var tlds      = require('haraka-tld');
 
-var net_utils = require('./net_utils');
-var utils     = require('./utils');
+var net_utils = require('haraka-net-utils');
+var utils     = require('haraka-utils');
 
 // Default regexps to extract the URIs from the message
 var numeric_ip = /\w{3,16}:\/+(\S+@)?(\d+|0[xX][0-9A-Fa-f]+)\.(\d+|0[xX][0-9A-Fa-f]+)\.(\d+|0[xX][0-9A-Fa-f]+)\.(\d+|0[xX][0-9A-Fa-f]+)/gi;
@@ -53,7 +53,7 @@ exports.load_uri_config = function (next) {
     lists = this.config.get('data.uribl.ini');
     zones = Object.keys(lists);
     if (!zones || zones.length <= 1) {
-        this.logerr('aborting: no zones configured');
+        this.logerror('aborting: no zones configured');
         return next();
     }
     // Load excludes
@@ -282,11 +282,11 @@ exports.do_lookups = function (connection, next, hosts, type) {
 exports.hook_lookup_rdns = function (next, connection) {
     this.load_uri_config(next);
     var plugin = this;
-    dns.reverse(connection.remote_ip, function (err, rdns) {
+    dns.reverse(connection.remote.ip, function (err, rdns) {
         if (err) {
             if (err.code) {
                 if (err.code === dns.NXDOMAIN) return next();
-                if (err.code === 'ENOTFOUND') return next();
+                if (err.code === dns.NOTFOUND) return next();
             }
             connection.results.add(plugin, {err: err });
             return next();

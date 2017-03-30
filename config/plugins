@@ -8,8 +8,8 @@
 # To see the help docs for a particular plugin, run 'haraka -h plugin.name'
 
 #process_title
-# Log to syslog (see 'haraka -h log.syslog')
-# log.syslog
+# Log to syslog (see 'haraka -h syslog')
+# syslog
 
 # CONNECT
 #toobusy
@@ -18,8 +18,8 @@
 # RCPT TO address you accept mail from. See 'haraka -h access'.
 access
 # connect.p0f
-# connect.geoip
-# connect.asn
+# geoip
+# asn
 # connect.fcrdns
 # block mails from known bad hosts (see config/dnsbl.zones for the DNS zones queried)
 dnsbl
@@ -60,6 +60,7 @@ data.headers
 #spamassassin
 #dkim_sign
 #karma
+#limit
 
 # QUEUE
 # queues: discard  qmail-queue  quarantine  smtp_forward  smtp_proxy
@@ -68,3 +69,5 @@ queue/smtp_forward
 
 # Disconnect client if they spew bad SMTP commands at us
 max_unrecognized_commands
+
+#watch

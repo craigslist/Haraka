@@ -6,18 +6,26 @@ var cfreader     = require('./configfile');
 
 module.exports = new Config();
 
-function Config (root_path) {
+function Config (root_path, no_overrides) {
     this.root_path = root_path || cfreader.config_path;
     this.module_config = function (defaults_path, overrides_path) {
-        var cfg = new Config(path.join(defaults_path, 'config'));
+        var cfg = new Config(path.join(defaults_path, 'config'), true);
         if (overrides_path) {
             cfg.overrides_path = path.join(overrides_path, 'config');
         }
         return cfg;
     };
+    if (process.env.HARAKA_TEST_DIR) {
+        this.root_path = path.join(process.env.HARAKA_TEST_DIR, 'config');
+        return;
+    }
+    if (process.env.HARAKA && !no_overrides) {
+        this.overrides_path = root_path || cfreader.config_path;
+        this.root_path = path.join(process.env.HARAKA, 'config');
+    }
 }
 
-Config.prototype.get = function(name, type, cb, options) {
+Config.prototype.get = function (name, type, cb, options) {
     var a = this.arrange_args([name, type, cb, options]);
     if (!a[1]) a[1] = 'value';
 
